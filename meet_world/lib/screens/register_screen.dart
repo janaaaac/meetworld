@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:meet_world/constants/colours.dart';
+import 'package:meet_world/providers/theme_provider.dart';
 import '../widgets/custom_text_field.dart';
 import '../widgets/primary_button.dart';
 import '../services/auth_service.dart';
@@ -19,46 +21,54 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.backgroundColor,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: EdgeInsets.all(20.0),
-            child: Column(
-              children: [
-                SizedBox(height: 60),
-
-                // App title row at the top
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+    return Consumer<ThemeProvider>(
+      builder: (context, themeProvider, child) {
+        return Scaffold(
+          backgroundColor: themeProvider.backgroundColor,
+          body: SafeArea(
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: EdgeInsets.all(20.0),
+                child: Column(
                   children: [
-                    Icon(Icons.favorite, color: AppColors.textColor, size: 24),
-                    SizedBox(width: 8),
-                    Text(
-                      'Meet World',
-                      style: TextStyle(
-                        color: AppColors.textColor,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    SizedBox(height: 60),
+
+                    // App title row at the top
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.favorite,
+                          color: themeProvider.textColor,
+                          size: 24,
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          'Meet World',
+                          style: TextStyle(
+                            color: themeProvider.textColor,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
                     ),
+
+                    SizedBox(height: 40),
+                    _buildRegisterCard(themeProvider),
+                    SizedBox(height: 40),
+                    _buildBottomSection(themeProvider),
                   ],
                 ),
-
-                SizedBox(height: 40),
-                _buildRegisterCard(),
-                SizedBox(height: 40),
-                _buildBottomSection(),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildRegisterCard() {
+  Widget _buildRegisterCard(ThemeProvider themeProvider) {
     return Container(
       padding: EdgeInsets.all(30),
       decoration: BoxDecoration(borderRadius: BorderRadius.circular(20)),
@@ -70,7 +80,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             Text(
               'Register',
               style: TextStyle(
-                color: AppColors.textColor,
+                color: themeProvider.textColor,
                 fontSize: 32,
                 fontWeight: FontWeight.bold,
               ),
@@ -80,7 +90,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             Text(
               'Create a new account',
               style: TextStyle(
-                color: AppColors.textColor.withOpacity(0.7),
+                color: themeProvider.textColor.withOpacity(0.7),
                 fontSize: 16,
               ),
               textAlign: TextAlign.center,
@@ -146,8 +156,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       context: context,
                       builder:
                           (_) => AlertDialog(
-                            title: Text("Sign Up Failed"),
-                            content: Text("Something went wrong."),
+                            backgroundColor: themeProvider.cardColor,
+                            title: Text(
+                              "Sign Up Failed",
+                              style: TextStyle(color: themeProvider.textColor),
+                            ),
+                            content: Text(
+                              "Something went wrong.",
+                              style: TextStyle(
+                                color: themeProvider.textColor.withOpacity(0.7),
+                              ),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context),
+                                child: Text(
+                                  "OK",
+                                  style: TextStyle(
+                                    color: AppColors.primaryColor,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                     );
                   }
@@ -162,7 +192,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               textAlign: TextAlign.center,
               text: TextSpan(
                 style: TextStyle(
-                  color: AppColors.textColor.withOpacity(0.7),
+                  color: themeProvider.textColor.withOpacity(0.7),
                   fontSize: 14,
                 ),
                 children: [
@@ -180,14 +210,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  Widget _buildBottomSection() {
+  Widget _buildBottomSection(ThemeProvider themeProvider) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Text(
           "Already have an account? ",
           style: TextStyle(
-            color: AppColors.textColor.withOpacity(0.7),
+            color: themeProvider.textColor.withOpacity(0.7),
             fontSize: 16,
           ),
         ),

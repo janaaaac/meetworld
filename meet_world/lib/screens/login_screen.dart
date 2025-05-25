@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:meet_world/constants/colours.dart';
+import 'package:meet_world/providers/theme_provider.dart';
 import 'package:meet_world/widgets/google_button.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/custom_text_field.dart';
@@ -23,46 +25,54 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.backgroundColor,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: EdgeInsets.all(20.0),
-            child: Column(
-              children: [
-                SizedBox(height: 60),
-
-                // App title row at the top
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+    return Consumer<ThemeProvider>(
+      builder: (context, themeProvider, child) {
+        return Scaffold(
+          backgroundColor: themeProvider.backgroundColor,
+          body: SafeArea(
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: EdgeInsets.all(20.0),
+                child: Column(
                   children: [
-                    Icon(Icons.favorite, color: AppColors.textColor, size: 24),
-                    SizedBox(width: 8),
-                    Text(
-                      'Meet World',
-                      style: TextStyle(
-                        color: AppColors.textColor,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    SizedBox(height: 60),
+
+                    // App title row at the top
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.favorite,
+                          color: themeProvider.textColor,
+                          size: 24,
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          'Meet World',
+                          style: TextStyle(
+                            color: themeProvider.textColor,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
                     ),
+
+                    SizedBox(height: 40),
+                    _buildLoginCard(themeProvider),
+                    SizedBox(height: 40),
+                    _buildBottomSection(themeProvider),
                   ],
                 ),
-
-                SizedBox(height: 40),
-                _buildLoginCard(),
-                SizedBox(height: 40),
-                _buildBottomSection(),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildLoginCard() {
+  Widget _buildLoginCard(ThemeProvider themeProvider) {
     return Container(
       padding: EdgeInsets.all(30),
       decoration: BoxDecoration(borderRadius: BorderRadius.circular(20)),
@@ -74,7 +84,7 @@ class _LoginScreenState extends State<LoginScreen> {
             Text(
               'Login',
               style: TextStyle(
-                color: AppColors.textColor,
+                color: themeProvider.textColor,
                 fontSize: 32,
                 fontWeight: FontWeight.bold,
               ),
@@ -84,7 +94,7 @@ class _LoginScreenState extends State<LoginScreen> {
             Text(
               'Please sign in to continue.',
               style: TextStyle(
-                color: AppColors.textColor.withOpacity(0.7),
+                color: themeProvider.textColor.withOpacity(0.7),
                 fontSize: 16,
               ),
               textAlign: TextAlign.center,
@@ -147,7 +157,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   if (response.statusCode == 200) {
                     final data = jsonDecode(response.body);
 
-                    // Save user data to SharedPreferences
+                    // Save all user data to SharedPreferences
                     SharedPreferences prefs =
                         await SharedPreferences.getInstance();
                     await prefs.setString('token', data['token']);
@@ -156,6 +166,24 @@ class _LoginScreenState extends State<LoginScreen> {
                       data['username'] ?? 'User',
                     );
                     await prefs.setString('email', _emailController.text);
+
+                    // Save profile data if available
+                    if (data['location'] != null) {
+                      await prefs.setString('location', data['location']);
+                    }
+                    if (data['bio'] != null) {
+                      await prefs.setString('bio', data['bio']);
+                    }
+                    if (data['gender'] != null) {
+                      await prefs.setString('gender', data['gender']);
+                    }
+                    if (data['age'] != null) {
+                      await prefs.setInt('age', data['age']);
+                    }
+                    await prefs.setBool(
+                      'profileCompleted',
+                      data['profileCompleted'] ?? false,
+                    );
 
                     print("Login success: ${data['token']}");
 
@@ -172,15 +200,15 @@ class _LoginScreenState extends State<LoginScreen> {
                       context: context,
                       builder:
                           (_) => AlertDialog(
-                            backgroundColor: AppColors.cardColor,
+                            backgroundColor: themeProvider.cardColor,
                             title: Text(
                               "Login Failed",
-                              style: TextStyle(color: AppColors.textColor),
+                              style: TextStyle(color: themeProvider.textColor),
                             ),
                             content: Text(
                               "Invalid email or password",
                               style: TextStyle(
-                                color: AppColors.textColor.withOpacity(0.7),
+                                color: themeProvider.textColor.withOpacity(0.7),
                               ),
                             ),
                             actions: [
@@ -217,14 +245,14 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildBottomSection() {
+  Widget _buildBottomSection(ThemeProvider themeProvider) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Text(
           "Don't have an account? ",
           style: TextStyle(
-            color: AppColors.textColor.withOpacity(0.7),
+            color: themeProvider.textColor.withOpacity(0.7),
             fontSize: 16,
           ),
         ),

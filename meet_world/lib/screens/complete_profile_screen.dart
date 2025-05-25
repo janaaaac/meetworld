@@ -259,9 +259,17 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
       print("Response body: ${response.body}");
 
       if (response.statusCode == 200) {
-        // Save profile completion status
+        // Parse the response to get user data
+        final responseData = jsonDecode(response.body);
+        final userData = responseData['user'];
+
+        // Save profile completion status and user data
         SharedPreferences prefs = await SharedPreferences.getInstance();
         await prefs.setBool('profileCompleted', true);
+        await prefs.setString('location', userData['location'] ?? '');
+        await prefs.setString('bio', userData['bio'] ?? '');
+        await prefs.setString('gender', userData['gender'] ?? '');
+        await prefs.setInt('age', userData['age'] ?? 0);
 
         print("Profile completed successfully!");
 
