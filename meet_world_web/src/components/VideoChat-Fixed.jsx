@@ -172,9 +172,16 @@ export default function VideoChat() {
       
       // Set local video
       if (localVideoRef.current) {
+        console.log('Setting local video stream');
         localVideoRef.current.srcObject = mediaStream;
-        localVideoRef.current.play().catch(error => {
-          console.error('Error playing local video:', error);
+        
+        // Force a re-render of the video element
+        localVideoRef.current.load();
+        
+        // Ensure video tracks are enabled
+        mediaStream.getVideoTracks().forEach(track => {
+          track.enabled = true;
+          console.log('Video track enabled:', track.readyState);
         });
       }
       
@@ -228,10 +235,24 @@ export default function VideoChat() {
         console.log('Received remote stream:', stream);
         setRemoteStream(stream);
         if (remoteVideoRef.current) {
+          console.log('Setting remote video stream');
           remoteVideoRef.current.srcObject = stream;
-          remoteVideoRef.current.play().catch(error => {
-            console.error('Error playing remote video:', error);
+          
+          // Force a re-render of the video element
+          remoteVideoRef.current.load();
+          
+          // Ensure video tracks are enabled
+          stream.getVideoTracks().forEach(track => {
+            track.enabled = true;
+            console.log('Remote video track enabled:', track.readyState);
           });
+          
+          // Add error handling for the video element
+          remoteVideoRef.current.onerror = (e) => {
+            console.error('Remote video error:', e);
+          };
+        } else {
+          console.error('Remote video ref not available');
         }
       });
 
@@ -363,6 +384,20 @@ export default function VideoChat() {
       }, 500);
     }
   };
+
+  useEffect(() => {
+    if (stream && localVideoRef.current) {
+      console.log('Setting up local video stream in useEffect');
+      localVideoRef.current.srcObject = stream;
+    }
+  }, [stream]);
+
+  useEffect(() => {
+    if (remoteStream && remoteVideoRef.current) {
+      console.log('Setting up remote video stream in useEffect');
+      remoteVideoRef.current.srcObject = remoteStream;
+    }
+  }, [remoteStream]);
 
   if (isLoading) {
     return (
@@ -579,6 +614,11 @@ export default function VideoChat() {
                 playsInline
                 className="w-full h-full object-cover"
                 style={{ transform: 'scaleX(-1)' }}  // Mirror the remote video
+                onLoadedMetadata={(e) => {
+                  console.log('Remote video metadata loaded');
+                  e.target.play().catch(err => console.error('Remote video play failed:', err));
+                }}
+                onPlay={() => console.log('Remote video started playing')}
               />
               
               {/* Local Video (Picture in Picture) */}
@@ -590,6 +630,11 @@ export default function VideoChat() {
                   muted
                   className="w-full h-full object-cover"
                   style={{ transform: 'scaleX(-1)' }}  // Mirror the local video
+                  onLoadedMetadata={(e) => {
+                    console.log('Local video metadata loaded');
+                    e.target.play().catch(err => console.error('Local video play failed:', err));
+                  }}
+                  onPlay={() => console.log('Local video started playing')}
                 />
               </div>
 
