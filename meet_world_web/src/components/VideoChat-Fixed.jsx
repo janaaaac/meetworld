@@ -260,17 +260,45 @@ export default function VideoChat() {
         return;
       }
 
-      // Dynamic import of simple-peer
-      const { default: Peer } = await import('simple-peer');
-      
+      // Dynamic import with error handling and retries
+      let Peer;
+      try {
+        const SimplePeer = await import('simple-peer').catch(async (err) => {
+          console.error('Error loading simple-peer:', err);
+          // Retry once with a delay
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          return import('simple-peer');
+        });
+        Peer = SimplePeer.default;
+      } catch (err) {
+        console.error('Failed to load simple-peer:', err);
+        setError('Failed to initialize video chat. Please check your connection and try again.');
+        setIsConnecting(false);
+        return;
+      }
+
+      // Configure peer with ICE servers
       const newPeer = new Peer({
         initiator: true,
         trickle: false,
-        stream: mediaStream
+        stream: mediaStream,
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:global.stun.twilio.com:3478' }
+          ]
+        }
+      });
+
+      // Add error handling for peer events
+      newPeer.on('error', (err) => {
+        console.error('Peer connection error:', err);
+        setError(`Connection error: ${err.message}. Please try again.`);
+        setIsConnecting(false);
       });
 
       newPeer.on('signal', (data) => {
-        console.log('Sending signal:', data);
+        console.log('Generated signal data:', data);
         if (socket) {
           socket.emit('join-video-chat', { 
             signal: data,
@@ -285,79 +313,38 @@ export default function VideoChat() {
         }
       });
 
-      newPeer.on('stream', async (stream) => {
-        console.log('Received remote stream:', stream);
-        setRemoteStream(stream);
-        
-        if (remoteVideoRef.current) {
-          console.log('Setting up remote video');
-          
-          // Stop any existing tracks
-          if (remoteVideoRef.current.srcObject) {
-            const tracks = remoteVideoRef.current.srcObject.getTracks();
-            tracks.forEach(track => track.stop());
-          }
-          
-          // Enhanced video track setup
-          const videoTrack = stream.getVideoTracks()[0];
-          if (videoTrack) {
-            videoTrack.enabled = true;
-            const settings = videoTrack.getSettings();
-            console.log('Remote video track:', {
-              enabled: videoTrack.enabled,
-              readyState: videoTrack.readyState,
-              settings: settings
-            });
-          }
-          
-          // Set new stream
-          remoteVideoRef.current.srcObject = stream;
-          
-          // Add comprehensive error handling
-          remoteVideoRef.current.onerror = (e) => {
-            console.error('Remote video error:', e);
-          };
-          
-          // Enhanced metadata and play handling
-          remoteVideoRef.current.onloadedmetadata = async () => {
-            console.log('Remote video metadata loaded');
-            try {
-              await remoteVideoRef.current.play();
-              console.log('Remote video playing');
-            } catch (err) {
-              console.error('Error playing remote video:', err);
-              // Retry play on user interaction
-              remoteVideoRef.current.onclick = async () => {
-                try {
-                  await remoteVideoRef.current.play();
-                  console.log('Remote video playing after user interaction');
-                  remoteVideoRef.current.onclick = null;
-                } catch (e) {
-                  console.error('Play after click failed:', e);
-                }
-              };
-            }
-          };
-
-          // Monitor state changes
-          remoteVideoRef.current.onpause = () => console.log('Remote video paused');
-          remoteVideoRef.current.onplay = () => console.log('Remote video started playing');
-          remoteVideoRef.current.onwaiting = () => console.log('Remote video waiting for data');
-        } else {
-          console.error('Remote video ref not available');
-        }
-      });
-
       newPeer.on('connect', () => {
-        console.log('Peer connected');
+        console.log('Peer connection established');
         setIsConnected(true);
         setIsConnecting(false);
       });
 
-      newPeer.on('error', (err) => {
-        console.error('Peer error:', err);
-        setError(`Peer connection failed: ${err.message}`);
-        setIsConnecting(false);
+      newPeer.on('close', () => {
+        console.log('Peer connection closed');
+        handleDisconnect();
+      });
+
+      // Enhanced stream handling
+      newPeer.on('stream', async (stream) => {
+        console.log('Received remote stream:', stream);
+        if (!stream.active) {
+          console.error('Received inactive stream');
+          return;
+        }
+
+        const videoTrack = stream.getVideoTracks()[0];
+        if (!videoTrack) {
+          console.error('No video track in remote stream');
+          return;
+        }
+
+        console.log('Remote video track:', {
+          enabled: videoTrack.enabled,
+          readyState: videoTrack.readyState,
+          settings: videoTrack.getSettings()
+        });
+
+        setRemoteStream(stream);
       });
 
       setPeer(newPeer);
@@ -366,28 +353,54 @@ export default function VideoChat() {
       console.error('Start video chat error:', error);
       setError(`Failed to start video chat: ${error.message}`);
       setIsConnecting(false);
+      // Clean up any partial connections
+      if (peer) {
+        peer.destroy();
+        setPeer(null);
+      }
     }
   };
 
   const handleDisconnect = () => {
     console.log('Disconnecting...');
     
+    // Clean up peer connection
     if (peer) {
-      peer.destroy();
+      try {
+        peer.removeAllListeners(); // Remove all event listeners
+        peer.destroy();
+      } catch (err) {
+        console.error('Error destroying peer:', err);
+      }
       setPeer(null);
     }
+
+    // Clean up remote stream
     if (remoteStream) {
-      remoteStream.getTracks().forEach(track => track.stop());
+      try {
+        remoteStream.getTracks().forEach(track => {
+          track.stop();
+          remoteStream.removeTrack(track);
+        });
+      } catch (err) {
+        console.error('Error cleaning up remote stream:', err);
+      }
       setRemoteStream(null);
     }
+
+    // Clean up video elements
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = null;
+      remoteVideoRef.current.load(); // Force reload of video element
     }
     
     setIsConnected(false);
     setIsConnecting(false);
     setPartnerInfo(null);
     setMessages([]);
+
+    // Log cleanup completion
+    console.log('Cleanup completed');
   };
 
   const findNewPartner = () => {
@@ -585,6 +598,13 @@ export default function VideoChat() {
     }
   }, [remoteStream]);
 
+  // Ensure camera preview always gets the stream during connecting state
+  useEffect(() => {
+    if (isConnecting && stream && localVideoRef.current) {
+      localVideoRef.current.srcObject = stream;
+    }
+  }, [isConnecting, stream]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
@@ -751,6 +771,20 @@ export default function VideoChat() {
                 <h2 className="text-2xl font-bold mb-4">Ready to meet someone new?</h2>
                 <p className="text-gray-400 mb-6">Start a video chat and connect with people around the world</p>
                 
+                {/* Local preview after enabling camera */}
+                {stream && (
+                  <div className="w-48 h-36 mx-auto mb-6 bg-gray-800 rounded-lg overflow-hidden border-2 border-gray-600 relative">
+                    <video
+                      ref={localVideoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="absolute inset-0 w-full h-full object-cover"
+                      style={{ transform: 'scaleX(-1)' }}
+                    />
+                  </div>
+                )}
+                
                 {/* Active Filters Display */}
                 {(filters.gender !== 'Anyone' || filters.sameCountryOnly) && (
                   <div className="bg-blue-600/20 border border-blue-500/30 rounded-lg p-3 mb-4 inline-block">
@@ -767,10 +801,10 @@ export default function VideoChat() {
                 )}
                 
                 <button
-                  onClick={startVideoChat}
+                  onClick={() => stream ? startVideoChat() : getUserMedia()}
                   className="px-8 py-3 bg-green-600 hover:bg-green-700 rounded-xl font-semibold text-lg transition-colors"
                 >
-                  Start Video Chat
+                  {stream ? 'Start Video Chat' : 'Enable Camera'}
                 </button>
               </div>
             </div>
@@ -779,6 +813,19 @@ export default function VideoChat() {
           {isConnecting && (
             <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
               <div className="text-center">
+                {/* Camera Preview */}
+                {stream && (
+                  <div className="w-64 h-48 mx-auto mb-6 bg-gray-800 rounded-lg overflow-hidden border-2 border-gray-600 relative">
+                    <video
+                      ref={localVideoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="absolute inset-0 w-full h-full object-cover"
+                      style={{ transform: 'scaleX(-1)' }}
+                    />
+                  </div>
+                )}
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-400 mx-auto mb-4"></div>
                 <p className="text-lg mb-2">Connecting you with someone...</p>
                 {(filters.gender !== 'Anyone' || filters.sameCountryOnly) && (
@@ -909,7 +956,7 @@ export default function VideoChat() {
           )}
 
           {/* Video Controls */}
-          {(isConnected || stream) && (
+          {stream && (
             <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 flex space-x-3">
               <button
                 onClick={toggleVideo}
@@ -941,21 +988,25 @@ export default function VideoChat() {
                 </button>
               )}
 
-              <button
-                onClick={findNewPartner}
-                className="p-3 rounded-full bg-green-600/80 hover:bg-green-700/80 transition-colors"
-                title="Find new partner"
-              >
-                <RotateCcw className="w-6 h-6" />
-              </button>
+              {isConnected ? (
+                <>
+                  <button
+                    onClick={findNewPartner}
+                    className="p-3 rounded-full bg-green-600/80 hover:bg-green-700/80 transition-colors"
+                    title="Find new partner"
+                  >
+                    <RotateCcw className="w-6 h-6" />
+                  </button>
 
-              <button
-                onClick={handleDisconnect}
-                className="p-3 rounded-full bg-red-600/80 hover:bg-red-700/80 transition-colors"
-                title="End call"
-              >
-                <Phone className="w-6 h-6 transform rotate-[135deg]" />
-              </button>
+                  <button
+                    onClick={handleDisconnect}
+                    className="p-3 rounded-full bg-red-600/80 hover:bg-red-700/80 transition-colors"
+                    title="End call"
+                  >
+                    <Phone className="w-6 h-6 transform rotate-[135deg]" />
+                  </button>
+                </>
+              ) : null}
             </div>
           )}
         </div>
