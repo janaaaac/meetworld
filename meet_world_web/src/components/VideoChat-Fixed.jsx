@@ -608,6 +608,14 @@ export default function VideoChat() {
     }
   }, [isConnecting, stream]);
 
+  // Ensure local preview in connected state
+  useEffect(() => {
+    if (isConnected && stream && localVideoRef.current) {
+      localVideoRef.current.srcObject = stream;
+      localVideoRef.current.play().catch(err => console.error('Error playing local video in connected state', err));
+    }
+  }, [isConnected, stream]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
