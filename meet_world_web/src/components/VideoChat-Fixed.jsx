@@ -616,6 +616,14 @@ export default function VideoChat() {
     }
   }, [isConnected, stream]);
 
+  // Ensure remote video playback after connection
+  useEffect(() => {
+    if (isConnected && remoteStream && remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = remoteStream;
+      remoteVideoRef.current.play().catch(err => console.error('Error playing remote video in connected state', err));
+    }
+  }, [isConnected, remoteStream]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
