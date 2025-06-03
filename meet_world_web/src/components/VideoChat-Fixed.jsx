@@ -251,13 +251,16 @@ export default function VideoChat() {
     try {
       setIsConnecting(true);
       setError(null);
-      
       console.log('Starting video chat...');
       
-      const mediaStream = await getUserMedia();
+      // Reuse existing stream or request media if not yet enabled
+      let mediaStream = stream;
       if (!mediaStream) {
-        setIsConnecting(false);
-        return;
+        mediaStream = await getUserMedia();
+        if (!mediaStream) {
+          setIsConnecting(false);
+          return;
+        }
       }
 
       // Dynamic import with error handling and retries
@@ -801,10 +804,10 @@ export default function VideoChat() {
                 )}
                 
                 <button
-                  onClick={() => stream ? startVideoChat() : getUserMedia()}
+                  onClick={startVideoChat}
                   className="px-8 py-3 bg-green-600 hover:bg-green-700 rounded-xl font-semibold text-lg transition-colors"
                 >
-                  {stream ? 'Start Video Chat' : 'Enable Camera'}
+                  Start Video Chat
                 </button>
               </div>
             </div>
