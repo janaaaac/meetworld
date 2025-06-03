@@ -150,11 +150,18 @@ export default function VideoChat() {
         throw new Error('getUserMedia is not supported');
       }
       
+      // First check if we can get a list of devices
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(device => device.kind === 'videoinput');
+      console.log('Available video devices:', videoDevices);
+
+      // Request media with specific constraints for Mac
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          facingMode: "user"
+          width: { min: 640, ideal: 1280, max: 1920 },
+          height: { min: 480, ideal: 720, max: 1080 },
+          facingMode: "user",
+          frameRate: { ideal: 30 }
         },
         audio: true
       });
@@ -184,28 +191,43 @@ export default function VideoChat() {
           tracks.forEach(track => track.stop());
         }
         
-        localVideoRef.current.srcObject = mediaStream;
-        
-        // Wait for the video element to be ready
-        await new Promise((resolve) => {
-          localVideoRef.current.onloadedmetadata = () => {
-            console.log('Local video metadata loaded');
-            resolve();
-          };
-        });
-        
-        try {
-          await localVideoRef.current.play();
-          console.log('Local video playing');
-        } catch (error) {
-          console.error('Error playing local video:', error);
-        }
-        
-        // Ensure video tracks are enabled
+        // Ensure video tracks are enabled before setting srcObject
         mediaStream.getVideoTracks().forEach(track => {
           track.enabled = true;
-          console.log('Video track enabled:', track.readyState, 'with settings:', track.getSettings());
+          console.log('Video track enabled:', track.readyState);
+          
+          // Log detailed track information
+          const settings = track.getSettings();
+          console.log('Track settings:', {
+            width: settings.width,
+            height: settings.height,
+            frameRate: settings.frameRate,
+            deviceId: settings.deviceId,
+            facingMode: settings.facingMode
+          });
+          
+          // Add track event listeners
+          track.onended = () => console.log('Video track ended');
+          track.onmute = () => console.log('Video track muted');
+          track.onunmute = () => console.log('Video track unmuted');
         });
+        
+        // Set the stream
+        localVideoRef.current.srcObject = mediaStream;
+        
+        // Force a play attempt
+        const playPromise = localVideoRef.current.play();
+        if (playPromise) {
+          playPromise.catch(error => {
+            console.error('Error playing local video:', error);
+            // Try playing again after a short delay
+            setTimeout(() => {
+              localVideoRef.current.play().catch(e => 
+                console.error('Retry play failed:', e)
+              );
+            }, 1000);
+          });
+        }
       }
       
       return mediaStream;
@@ -671,19 +693,25 @@ export default function VideoChat() {
               <div className="absolute top-4 right-4 w-48 h-36 bg-gray-800 rounded-lg overflow-hidden border-2 border-gray-600">
                 <video
                   ref={localVideoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover"
-                  style={{ transform: 'scaleX(-1)' }}  // Mirror the local video
+                  autoPlay={true}
+                  playsInline={true}
+                  muted={true}
+                  className="w-full h-full object-contain"
+                  style={{ 
+                    transform: 'scaleX(-1)',
+                    backgroundColor: 'black'
+                  }}
+                  onCanPlay={() => console.log('Local video can play')}
+                  onPlaying={() => console.log('Local video is playing')}
+                  onLoadedData={() => console.log('Local video data loaded')}
                   onLoadedMetadata={(e) => {
-                    console.log('Local video metadata loaded');
+                    console.log('Local video metadata loaded, dimensions:', e.target.videoWidth, 'x', e.target.videoHeight);
                     e.target.play().catch(err => console.error('Local video play failed:', err));
                   }}
-                  onPlay={() => console.log('Local video started playing')}
-                  onError={(e) => console.error('Local video error:', e)}
-                  controls={false}
-                  webkit-playsinline="true"
+                  onError={(e) => {
+                    const error = e.target.error;
+                    console.error('Local video error:', error && error.message);
+                  }}
                 />
               </div>
 
