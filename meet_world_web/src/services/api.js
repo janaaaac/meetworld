@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Create axios instance with base URL
 const API = axios.create({
-  baseURL: 'http://localhost:5001/api',
+  baseURL: 'https://meetworldbackend-production.up.railway.app/api',
   headers: {
     'Content-Type': 'application/json',
   },
