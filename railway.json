@@ -3,26 +3,9 @@
   "build": {
     "builder": "NIXPACKS",
     "env": {
-      "NODE_VERSION": "18",
-      "NPM_VERSION": "9"
+      "NODE_VERSION": "18"
     },
-    "nixpacksPlan": {
-      "phases": {
-        "setup": {
-          "cmds": [
-            "curl -fsSL https://deb.nodesource.com/setup_18.x | bash -",
-            "apt-get install -y nodejs"
-          ]
-        },
-        "build": {
-          "cmds": [
-            "cd backend && npm ci"
-          ]
-        }
-      },
-      "start": {
-        "cmd": "cd backend && npm start"
-      }
-    }
+    "buildCommand": "cd backend && npm ci",
+    "startCommand": "cd backend && npm start"
   }
 }
