@@ -172,23 +172,31 @@ export default function VideoChat() {
       });
       
       console.log('Media access granted');
+      setStream(mediaStream);
       
-      // Log video track information
+      // Enhanced video track setup and monitoring
       const videoTrack = mediaStream.getVideoTracks()[0];
       if (videoTrack) {
+        // Enable track and log detailed state
+        videoTrack.enabled = true;
+        const settings = videoTrack.getSettings();
         console.log('Video track:', {
           enabled: videoTrack.enabled,
           readyState: videoTrack.readyState,
-          settings: videoTrack.getSettings()
+          settings: settings
         });
+
+        // Monitor track state changes
+        videoTrack.onended = () => console.log('Video track ended');
+        videoTrack.onmute = () => console.log('Video track muted');
+        videoTrack.onunmute = () => console.log('Video track unmuted');
       } else {
         console.error('No video track found in media stream');
       }
-      setStream(mediaStream);
       
-      // Set local video
+      // Enhanced local video element setup
       if (localVideoRef.current) {
-        console.log('Setting local video stream');
+        console.log('Setting up local video');
         
         // Stop any existing tracks
         if (localVideoRef.current.srcObject) {
@@ -196,43 +204,39 @@ export default function VideoChat() {
           tracks.forEach(track => track.stop());
         }
         
-        // Ensure video tracks are enabled before setting srcObject
-        mediaStream.getVideoTracks().forEach(track => {
-          track.enabled = true;
-          console.log('Video track enabled:', track.readyState);
-          
-          // Log detailed track information
-          const settings = track.getSettings();
-          console.log('Track settings:', {
-            width: settings.width,
-            height: settings.height,
-            frameRate: settings.frameRate,
-            deviceId: settings.deviceId,
-            facingMode: settings.facingMode
-          });
-          
-          // Add track event listeners
-          track.onended = () => console.log('Video track ended');
-          track.onmute = () => console.log('Video track muted');
-          track.onunmute = () => console.log('Video track unmuted');
-        });
-        
-        // Set the stream
+        // Set new stream
         localVideoRef.current.srcObject = mediaStream;
         
-        // Force a play attempt
-        const playPromise = localVideoRef.current.play();
-        if (playPromise) {
-          playPromise.catch(error => {
-            console.error('Error playing local video:', error);
-            // Try playing again after a short delay
-            setTimeout(() => {
-              localVideoRef.current.play().catch(e => 
-                console.error('Retry play failed:', e)
-              );
-            }, 1000);
-          });
-        }
+        // Add error handler
+        localVideoRef.current.onerror = (e) => {
+          console.error('Local video error:', e);
+        };
+
+        // Add metadata and state change handlers
+        localVideoRef.current.onloadedmetadata = async () => {
+          console.log('Local video metadata loaded');
+          try {
+            await localVideoRef.current.play();
+            console.log('Local video playing');
+          } catch (err) {
+            console.error('Error playing local video:', err);
+            // Retry play on user interaction
+            localVideoRef.current.onclick = async () => {
+              try {
+                await localVideoRef.current.play();
+                console.log('Local video playing after user interaction');
+                localVideoRef.current.onclick = null;
+              } catch (e) {
+                console.error('Play after click failed:', e);
+              }
+            };
+          }
+        };
+
+        // Monitor state changes
+        localVideoRef.current.onpause = () => console.log('Local video paused');
+        localVideoRef.current.onplay = () => console.log('Local video started playing');
+        localVideoRef.current.onwaiting = () => console.log('Local video waiting for data');
       }
       
       return mediaStream;
@@ -286,7 +290,7 @@ export default function VideoChat() {
         setRemoteStream(stream);
         
         if (remoteVideoRef.current) {
-          console.log('Setting remote video stream');
+          console.log('Setting up remote video');
           
           // Stop any existing tracks
           if (remoteVideoRef.current.srcObject) {
@@ -294,33 +298,51 @@ export default function VideoChat() {
             tracks.forEach(track => track.stop());
           }
           
-          remoteVideoRef.current.srcObject = stream;
-          
-          // Wait for the video element to be ready
-          await new Promise((resolve) => {
-            remoteVideoRef.current.onloadedmetadata = () => {
-              console.log('Remote video metadata loaded');
-              resolve();
-            };
-          });
-          
-          try {
-            await remoteVideoRef.current.play();
-            console.log('Remote video playing');
-          } catch (error) {
-            console.error('Error playing remote video:', error);
+          // Enhanced video track setup
+          const videoTrack = stream.getVideoTracks()[0];
+          if (videoTrack) {
+            videoTrack.enabled = true;
+            const settings = videoTrack.getSettings();
+            console.log('Remote video track:', {
+              enabled: videoTrack.enabled,
+              readyState: videoTrack.readyState,
+              settings: settings
+            });
           }
           
-          // Ensure video tracks are enabled
-          stream.getVideoTracks().forEach(track => {
-            track.enabled = true;
-            console.log('Remote video track enabled:', track.readyState, 'with settings:', track.getSettings());
-          });
+          // Set new stream
+          remoteVideoRef.current.srcObject = stream;
           
-          // Add error handling for the video element
+          // Add comprehensive error handling
           remoteVideoRef.current.onerror = (e) => {
             console.error('Remote video error:', e);
           };
+          
+          // Enhanced metadata and play handling
+          remoteVideoRef.current.onloadedmetadata = async () => {
+            console.log('Remote video metadata loaded');
+            try {
+              await remoteVideoRef.current.play();
+              console.log('Remote video playing');
+            } catch (err) {
+              console.error('Error playing remote video:', err);
+              // Retry play on user interaction
+              remoteVideoRef.current.onclick = async () => {
+                try {
+                  await remoteVideoRef.current.play();
+                  console.log('Remote video playing after user interaction');
+                  remoteVideoRef.current.onclick = null;
+                } catch (e) {
+                  console.error('Play after click failed:', e);
+                }
+              };
+            }
+          };
+
+          // Monitor state changes
+          remoteVideoRef.current.onpause = () => console.log('Remote video paused');
+          remoteVideoRef.current.onplay = () => console.log('Remote video started playing');
+          remoteVideoRef.current.onwaiting = () => console.log('Remote video waiting for data');
         } else {
           console.error('Remote video ref not available');
         }
@@ -684,12 +706,6 @@ export default function VideoChat() {
                 playsInline
                 className="w-full h-full object-cover"
                 style={{ transform: 'scaleX(-1)' }}
-                onLoadedMetadata={(e) => {
-                  console.log('Remote video metadata loaded');
-                  e.target.play()
-                    .then(() => console.log('Remote video playing'))
-                    .catch(err => console.error('Remote video play failed:', err));
-                }}
               />
               
               {/* Local Video (Picture in Picture) */}
@@ -701,12 +717,6 @@ export default function VideoChat() {
                   muted
                   className="w-full h-full object-cover"
                   style={{ transform: 'scaleX(-1)' }}
-                  onLoadedMetadata={(e) => {
-                    console.log('Local video metadata loaded');
-                    e.target.play()
-                      .then(() => console.log('Local video playing'))
-                      .catch(err => console.error('Local video play failed:', err));
-                  }}
                 />
               </div>
 
