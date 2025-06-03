@@ -150,18 +150,23 @@ export default function VideoChat() {
         throw new Error('getUserMedia is not supported');
       }
       
-      // First check if we can get a list of devices
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = devices.filter(device => device.kind === 'videoinput');
-      console.log('Available video devices:', videoDevices);
+      // First list available devices and permissions
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        console.log('Available devices:', devices.map(d => ({
+          kind: d.kind,
+          label: d.label,
+          id: d.deviceId
+        })));
+      } catch (e) {
+        console.error('Error listing devices:', e);
+      }
 
-      // Request media with specific constraints for Mac
+      // Request media with working configuration from test
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: {
           width: { min: 640, ideal: 1280, max: 1920 },
-          height: { min: 480, ideal: 720, max: 1080 },
-          facingMode: "user",
-          frameRate: { ideal: 30 }
+          height: { min: 480, ideal: 720, max: 1080 }
         },
         audio: true
       });
@@ -678,39 +683,29 @@ export default function VideoChat() {
                 autoPlay
                 playsInline
                 className="w-full h-full object-cover"
-                style={{ transform: 'scaleX(-1)' }}  // Mirror the remote video
+                style={{ transform: 'scaleX(-1)' }}
                 onLoadedMetadata={(e) => {
                   console.log('Remote video metadata loaded');
-                  e.target.play().catch(err => console.error('Remote video play failed:', err));
+                  e.target.play()
+                    .then(() => console.log('Remote video playing'))
+                    .catch(err => console.error('Remote video play failed:', err));
                 }}
-                onPlay={() => console.log('Remote video started playing')}
-                onError={(e) => console.error('Remote video error:', e)}
-                controls={false}
-                webkit-playsinline="true"
               />
               
               {/* Local Video (Picture in Picture) */}
               <div className="absolute top-4 right-4 w-48 h-36 bg-gray-800 rounded-lg overflow-hidden border-2 border-gray-600">
                 <video
                   ref={localVideoRef}
-                  autoPlay={true}
-                  playsInline={true}
-                  muted={true}
-                  className="w-full h-full object-contain"
-                  style={{ 
-                    transform: 'scaleX(-1)',
-                    backgroundColor: 'black'
-                  }}
-                  onCanPlay={() => console.log('Local video can play')}
-                  onPlaying={() => console.log('Local video is playing')}
-                  onLoadedData={() => console.log('Local video data loaded')}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover"
+                  style={{ transform: 'scaleX(-1)' }}
                   onLoadedMetadata={(e) => {
-                    console.log('Local video metadata loaded, dimensions:', e.target.videoWidth, 'x', e.target.videoHeight);
-                    e.target.play().catch(err => console.error('Local video play failed:', err));
-                  }}
-                  onError={(e) => {
-                    const error = e.target.error;
-                    console.error('Local video error:', error && error.message);
+                    console.log('Local video metadata loaded');
+                    e.target.play()
+                      .then(() => console.log('Local video playing'))
+                      .catch(err => console.error('Local video play failed:', err));
                   }}
                 />
               </div>

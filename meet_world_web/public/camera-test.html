@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera and Audio Test</title>
+    <style>
+        body {
+            background: #111;
+            color: white;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            text-align: center;
+        }
+        video {
+            width: 400px;
+            height: 300px;
+            background: #333;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        .controls {
+            margin: 20px 0;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        #devices {
+            margin: 20px 0;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Camera and Audio Test</h1>
+        <video id="video" autoplay playsinline muted></video>
+        <div class="controls">
+            <button onclick="startTest()">Start Test</button>
+            <button onclick="toggleAudio()">Toggle Audio</button>
+            <button onclick="toggleVideo()">Toggle Video</button>
+        </div>
+        <div id="devices">
+            <h3>Available Devices:</h3>
+            <pre id="deviceList"></pre>
+        </div>
+    </div>
+
+    <script>
+        let stream;
+        let audioEnabled = true;
+        let videoEnabled = true;
+
+        async function listDevices() {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const deviceList = document.getElementById('deviceList');
+            deviceList.textContent = devices
+                .map(device => `${device.kind}: ${device.label}`)
+                .join('\n');
+        }
+
+        async function startTest() {
+            try {
+                await listDevices();
+                
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { min: 640, ideal: 1280, max: 1920 },
+                        height: { min: 480, ideal: 720, max: 1080 }
+                    },
+                    audio: true
+                });
+
+                const video = document.getElementById('video');
+                video.srcObject = stream;
+                video.onloadedmetadata = () => {
+                    console.log('Video metadata loaded');
+                    video.play()
+                        .then(() => console.log('Video playing'))
+                        .catch(err => console.error('Error playing video:', err));
+                };
+
+                // Log track information
+                stream.getTracks().forEach(track => {
+                    console.log(`Track ${track.kind}:`, {
+                        enabled: track.enabled,
+                        readyState: track.readyState,
+                        settings: track.getSettings()
+                    });
+                });
+
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error accessing media devices: ' + error.message);
+            }
+        }
+
+        function toggleAudio() {
+            if (stream) {
+                const audioTrack = stream.getAudioTracks()[0];
+                if (audioTrack) {
+                    audioEnabled = !audioEnabled;
+                    audioTrack.enabled = audioEnabled;
+                    console.log('Audio enabled:', audioEnabled);
+                }
+            }
+        }
+
+        function toggleVideo() {
+            if (stream) {
+                const videoTrack = stream.getVideoTracks()[0];
+                if (videoTrack) {
+                    videoEnabled = !videoEnabled;
+                    videoTrack.enabled = videoEnabled;
+                    console.log('Video enabled:', videoEnabled);
+                }
+            }
+        }
+    </script>
+</body>
+</html>
