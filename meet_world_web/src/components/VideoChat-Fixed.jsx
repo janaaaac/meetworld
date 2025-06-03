@@ -151,7 +151,11 @@ export default function VideoChat() {
       }
       
       const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: true,
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: "user"
+        },
         audio: true
       });
       
@@ -173,15 +177,34 @@ export default function VideoChat() {
       // Set local video
       if (localVideoRef.current) {
         console.log('Setting local video stream');
+        
+        // Stop any existing tracks
+        if (localVideoRef.current.srcObject) {
+          const tracks = localVideoRef.current.srcObject.getTracks();
+          tracks.forEach(track => track.stop());
+        }
+        
         localVideoRef.current.srcObject = mediaStream;
         
-        // Force a re-render of the video element
-        localVideoRef.current.load();
+        // Wait for the video element to be ready
+        await new Promise((resolve) => {
+          localVideoRef.current.onloadedmetadata = () => {
+            console.log('Local video metadata loaded');
+            resolve();
+          };
+        });
+        
+        try {
+          await localVideoRef.current.play();
+          console.log('Local video playing');
+        } catch (error) {
+          console.error('Error playing local video:', error);
+        }
         
         // Ensure video tracks are enabled
         mediaStream.getVideoTracks().forEach(track => {
           track.enabled = true;
-          console.log('Video track enabled:', track.readyState);
+          console.log('Video track enabled:', track.readyState, 'with settings:', track.getSettings());
         });
       }
       
@@ -231,20 +254,40 @@ export default function VideoChat() {
         }
       });
 
-      newPeer.on('stream', (stream) => {
+      newPeer.on('stream', async (stream) => {
         console.log('Received remote stream:', stream);
         setRemoteStream(stream);
+        
         if (remoteVideoRef.current) {
           console.log('Setting remote video stream');
+          
+          // Stop any existing tracks
+          if (remoteVideoRef.current.srcObject) {
+            const tracks = remoteVideoRef.current.srcObject.getTracks();
+            tracks.forEach(track => track.stop());
+          }
+          
           remoteVideoRef.current.srcObject = stream;
           
-          // Force a re-render of the video element
-          remoteVideoRef.current.load();
+          // Wait for the video element to be ready
+          await new Promise((resolve) => {
+            remoteVideoRef.current.onloadedmetadata = () => {
+              console.log('Remote video metadata loaded');
+              resolve();
+            };
+          });
+          
+          try {
+            await remoteVideoRef.current.play();
+            console.log('Remote video playing');
+          } catch (error) {
+            console.error('Error playing remote video:', error);
+          }
           
           // Ensure video tracks are enabled
           stream.getVideoTracks().forEach(track => {
             track.enabled = true;
-            console.log('Remote video track enabled:', track.readyState);
+            console.log('Remote video track enabled:', track.readyState, 'with settings:', track.getSettings());
           });
           
           // Add error handling for the video element
@@ -619,6 +662,9 @@ export default function VideoChat() {
                   e.target.play().catch(err => console.error('Remote video play failed:', err));
                 }}
                 onPlay={() => console.log('Remote video started playing')}
+                onError={(e) => console.error('Remote video error:', e)}
+                controls={false}
+                webkit-playsinline="true"
               />
               
               {/* Local Video (Picture in Picture) */}
@@ -635,6 +681,9 @@ export default function VideoChat() {
                     e.target.play().catch(err => console.error('Local video play failed:', err));
                   }}
                   onPlay={() => console.log('Local video started playing')}
+                  onError={(e) => console.error('Local video error:', e)}
+                  controls={false}
+                  webkit-playsinline="true"
                 />
               </div>
 
