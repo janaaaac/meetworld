@@ -67,7 +67,7 @@ export default function VideoChat() {
         // Initialize socket connection
         const { default: io } = await import('socket.io-client');
         
-        const newSocket = io('http://localhost:5001', {
+        const newSocket = io('https://meetworldbackend-production.up.railway.app', {
           auth: { token }
         });
 

@@ -63,7 +63,7 @@ const VideoChatTestPolyfills = () => {
   const testSocket = async () => {
     try {
       addLog('Testing Socket.IO connection...');
-      const newSocket = io('http://localhost:5001', {
+      const newSocket = io('https://meetworldbackend-production.up.railway.app', {
         auth: {
           token: localStorage.getItem('token')
         }
