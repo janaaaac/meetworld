@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meet World - Quick Test Setup</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #1f2937;
+            color: white;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .container {
+            background: #374151;
+            padding: 30px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        .success {
+            background: #10b981;
+        }
+        .success:hover {
+            background: #059669;
+        }
+        .warning {
+            background: #f59e0b;
+        }
+        .warning:hover {
+            background: #d97706;
+        }
+        .error {
+            background: #ef4444;
+        }
+        .error:hover {
+            background: #dc2626;
+        }
+        pre {
+            background: #1f2937;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 14px;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 6px;
+            margin: 10px 0;
+        }
+        .status.success {
+            background: #065f46;
+            border: 1px solid #10b981;
+        }
+        .status.error {
+            background: #7f1d1d;
+            border: 1px solid #ef4444;
+        }
+    </style>
+</head>
+<body>
+    <h1>🌍 Meet World - Video Chat Test Setup</h1>
+    
+    <div class="container">
+        <h2>Quick Test Setup</h2>
+        <p>Use these buttons to quickly set up authentication data and test the video chat functionality:</p>
+        
+        <button onclick="setupTestAuth()" class="success">
+            1. Setup Test Authentication
+        </button>
+        
+        <button onclick="testLogin()">
+            2. Test Login Page
+        </button>
+        
+        <button onclick="testDashboard()">
+            3. Test Dashboard
+        </button>
+        
+        <button onclick="testVideoChat()">
+            4. Test Video Chat
+        </button>
+        
+        <button onclick="testVideoChatDebug()">
+            5. Debug Video Chat
+        </button>
+        
+        <button onclick="clearAuth()" class="error">
+            Clear Authentication
+        </button>
+        
+        <div id="status"></div>
+    </div>
+    
+    <div class="container">
+        <h2>Manual Test Instructions</h2>
+        <ol>
+            <li><strong>Setup Authentication:</strong> Click "Setup Test Authentication" to add valid login data</li>
+            <li><strong>Test Components:</strong> Use the buttons above to navigate to different parts of the app</li>
+            <li><strong>Video Chat Testing:</strong> The video chat requires camera/microphone permissions</li>
+            <li><strong>Multi-User Testing:</strong> Open multiple browser tabs with different user accounts</li>
+        </ol>
+    </div>
+    
+    <div class="container">
+        <h2>Current Authentication Status</h2>
+        <div id="authStatus">
+            <p>Checking authentication status...</p>
+        </div>
+    </div>
+    
+    <div class="container">
+        <h2>Backend API Test</h2>
+        <button onclick="testBackendConnection()">Test Backend Connection</button>
+        <button onclick="createNewTestUser()" class="warning">Create New Test User</button>
+        <div id="apiStatus"></div>
+    </div>
+
+    <script>
+        function updateStatus(message, type = 'success') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = `<div class="status ${type}">${message}</div>`;
+        }
+        
+        function updateAuthStatus() {
+            const token = localStorage.getItem('token');
+            const user = localStorage.getItem('user');
+            const authStatusDiv = document.getElementById('authStatus');
+            
+            if (token && user) {
+                try {
+                    const userData = JSON.parse(user);
+                    authStatusDiv.innerHTML = `
+                        <div class="status success">
+                            ✅ Authenticated as: ${userData.username}<br>
+                            User ID: ${userData._id}<br>
+                            Token: ${token.substring(0, 20)}...
+                        </div>
+                    `;
+                } catch (e) {
+                    authStatusDiv.innerHTML = `
+                        <div class="status error">
+                            ❌ Invalid user data in localStorage
+                        </div>
+                    `;
+                }
+            } else {
+                authStatusDiv.innerHTML = `
+                    <div class="status error">
+                        ❌ Not authenticated - No token or user data found
+                    </div>
+                `;
+            }
+        }
+        
+        function setupTestAuth() {
+            // Set up test authentication data
+            const testUser = {
+                _id: '683569c0697f676cad550617',
+                username: 'testuser123',
+                email: 'test@example.com'
+            };
+            const testToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4MzU2OWMwNjk3ZjY3NmNhZDU1MDYxNyIsImlhdCI6MTc0ODMzMDk1MywiZXhwIjoxNzQ4OTM1NzUzfQ.WhOu9MGMg_hJnPur5RUnuWffGANKRin3gIk71xzeImA';
+            
+            localStorage.setItem('user', JSON.stringify(testUser));
+            localStorage.setItem('token', testToken);
+            
+            updateStatus('✅ Test authentication data set successfully!');
+            updateAuthStatus();
+        }
+        
+        function clearAuth() {
+            localStorage.removeItem('user');
+            localStorage.removeItem('token');
+            updateStatus('🗑️ Authentication data cleared', 'warning');
+            updateAuthStatus();
+        }
+        
+        function testLogin() {
+            window.open('/login', '_blank');
+        }
+        
+        function testDashboard() {
+            window.open('/dashboard', '_blank');
+        }
+        
+        function testVideoChat() {
+            window.open('/video-chat', '_blank');
+        }
+        
+        function testVideoChatDebug() {
+            window.open('/video-chat-debug', '_blank');
+        }
+        
+        async function testBackendConnection() {
+            const apiStatusDiv = document.getElementById('apiStatus');
+            apiStatusDiv.innerHTML = '<p>Testing backend connection...</p>';
+            
+            try {
+                const response = await fetch('http://localhost:5001/api/auth/test', {
+                    method: 'GET',
+                });
+                
+                if (response.ok) {
+                    apiStatusDiv.innerHTML = `
+                        <div class="status success">
+                            ✅ Backend connection successful!<br>
+                            Status: ${response.status} ${response.statusText}
+                        </div>
+                    `;
+                } else {
+                    apiStatusDiv.innerHTML = `
+                        <div class="status error">
+                            ❌ Backend responded with error: ${response.status} ${response.statusText}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                apiStatusDiv.innerHTML = `
+                    <div class="status error">
+                        ❌ Backend connection failed: ${error.message}<br>
+                        Make sure the backend server is running on port 5001
+                    </div>
+                `;
+            }
+        }
+        
+        async function createNewTestUser() {
+            const apiStatusDiv = document.getElementById('apiStatus');
+            apiStatusDiv.innerHTML = '<p>Creating new test user...</p>';
+            
+            const randomId = Math.floor(Math.random() * 1000);
+            const testUserData = {
+                username: `testuser${randomId}`,
+                email: `test${randomId}@example.com`,
+                password: 'testpass123',
+                confirmPassword: 'testpass123'
+            };
+            
+            try {
+                const response = await fetch('http://localhost:5001/api/auth/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(testUserData)
+                });
+                
+                if (response.ok) {
+                    const userData = await response.json();
+                    
+                    // Set the new user data
+                    localStorage.setItem('user', JSON.stringify({
+                        _id: userData._id,
+                        username: userData.username,
+                        email: testUserData.email
+                    }));
+                    localStorage.setItem('token', userData.token);
+                    
+                    apiStatusDiv.innerHTML = `
+                        <div class="status success">
+                            ✅ New test user created successfully!<br>
+                            Username: ${userData.username}<br>
+                            User ID: ${userData._id}
+                        </div>
+                    `;
+                    updateAuthStatus();
+                } else {
+                    const error = await response.text();
+                    apiStatusDiv.innerHTML = `
+                        <div class="status error">
+                            ❌ Failed to create user: ${error}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                apiStatusDiv.innerHTML = `
+                    <div class="status error">
+                        ❌ Request failed: ${error.message}
+                    </div>
+                `;
+            }
+        }
+        
+        // Update auth status on page load
+        updateAuthStatus();
+    </script>
+</body>
+</html>
