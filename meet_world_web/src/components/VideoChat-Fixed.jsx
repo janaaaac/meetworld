@@ -156,11 +156,26 @@ export default function VideoChat() {
       });
       
       console.log('Media access granted');
+      
+      // Log video track information
+      const videoTrack = mediaStream.getVideoTracks()[0];
+      if (videoTrack) {
+        console.log('Video track:', {
+          enabled: videoTrack.enabled,
+          readyState: videoTrack.readyState,
+          settings: videoTrack.getSettings()
+        });
+      } else {
+        console.error('No video track found in media stream');
+      }
       setStream(mediaStream);
       
       // Set local video
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = mediaStream;
+        localVideoRef.current.play().catch(error => {
+          console.error('Error playing local video:', error);
+        });
       }
       
       return mediaStream;
@@ -214,6 +229,9 @@ export default function VideoChat() {
         setRemoteStream(stream);
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = stream;
+          remoteVideoRef.current.play().catch(error => {
+            console.error('Error playing remote video:', error);
+          });
         }
       });
 
@@ -560,6 +578,7 @@ export default function VideoChat() {
                 autoPlay
                 playsInline
                 className="w-full h-full object-cover"
+                style={{ transform: 'scaleX(-1)' }}  // Mirror the remote video
               />
               
               {/* Local Video (Picture in Picture) */}
@@ -570,6 +589,7 @@ export default function VideoChat() {
                   playsInline
                   muted
                   className="w-full h-full object-cover"
+                  style={{ transform: 'scaleX(-1)' }}  // Mirror the local video
                 />
               </div>
 
