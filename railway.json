@@ -6,6 +6,6 @@
       "NODE_VERSION": "18"
     },
     "buildCommand": "cd backend && npm ci",
-    "startCommand": "cd backend && npm start"
+    "startCommand": "cd backend && node server.js"
   }
 }
