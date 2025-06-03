@@ -480,14 +480,108 @@ export default function VideoChat() {
   useEffect(() => {
     if (stream && localVideoRef.current) {
       console.log('Setting up local video stream in useEffect');
-      localVideoRef.current.srcObject = stream;
+      
+      const setupLocalVideo = async () => {
+        try {
+          // Ensure any existing stream is cleaned up
+          if (localVideoRef.current.srcObject) {
+            const oldTracks = localVideoRef.current.srcObject.getTracks();
+            oldTracks.forEach(track => track.stop());
+          }
+
+          // Set new stream and log state
+          localVideoRef.current.srcObject = stream;
+          console.log('Local video track state:', {
+            tracks: stream.getTracks().map(t => ({
+              kind: t.kind,
+              enabled: t.enabled,
+              readyState: t.readyState,
+              muted: t.muted
+            }))
+          });
+
+          // Wait for metadata and attempt to play
+          await new Promise((resolve) => {
+            if (localVideoRef.current.readyState >= 2) {
+              resolve();
+            } else {
+              localVideoRef.current.onloadeddata = () => resolve();
+            }
+          });
+
+          await localVideoRef.current.play();
+          console.log('Local video playing successfully');
+        } catch (err) {
+          console.error('Error setting up local video:', err);
+          // Add UI feedback for video errors
+          setError(`Video setup error: ${err.message}. Try refreshing the page.`);
+        }
+      };
+
+      setupLocalVideo();
+
+      // Cleanup function
+      return () => {
+        if (localVideoRef.current && localVideoRef.current.srcObject) {
+          const tracks = localVideoRef.current.srcObject.getTracks();
+          tracks.forEach(track => track.stop());
+          localVideoRef.current.srcObject = null;
+        }
+      };
     }
   }, [stream]);
 
   useEffect(() => {
     if (remoteStream && remoteVideoRef.current) {
       console.log('Setting up remote video stream in useEffect');
-      remoteVideoRef.current.srcObject = remoteStream;
+      
+      const setupRemoteVideo = async () => {
+        try {
+          // Ensure any existing stream is cleaned up
+          if (remoteVideoRef.current.srcObject) {
+            const oldTracks = remoteVideoRef.current.srcObject.getTracks();
+            oldTracks.forEach(track => track.stop());
+          }
+
+          // Set new stream and log state
+          remoteVideoRef.current.srcObject = remoteStream;
+          console.log('Remote video track state:', {
+            tracks: remoteStream.getTracks().map(t => ({
+              kind: t.kind,
+              enabled: t.enabled,
+              readyState: t.readyState,
+              muted: t.muted
+            }))
+          });
+
+          // Wait for metadata and attempt to play
+          await new Promise((resolve) => {
+            if (remoteVideoRef.current.readyState >= 2) {
+              resolve();
+            } else {
+              remoteVideoRef.current.onloadeddata = () => resolve();
+            }
+          });
+
+          await remoteVideoRef.current.play();
+          console.log('Remote video playing successfully');
+        } catch (err) {
+          console.error('Error setting up remote video:', err);
+          // Add UI feedback for video errors
+          setError(`Remote video setup error: ${err.message}. Try refreshing the page.`);
+        }
+      };
+
+      setupRemoteVideo();
+
+      // Cleanup function
+      return () => {
+        if (remoteVideoRef.current && remoteVideoRef.current.srcObject) {
+          const tracks = remoteVideoRef.current.srcObject.getTracks();
+          tracks.forEach(track => track.stop());
+          remoteVideoRef.current.srcObject = null;
+        }
+      };
     }
   }, [remoteStream]);
 
@@ -706,6 +800,13 @@ export default function VideoChat() {
                 playsInline
                 className="w-full h-full object-cover"
                 style={{ transform: 'scaleX(-1)' }}
+                onError={(e) => {
+                  console.error('Remote video error:', e);
+                  setError('Remote video error. Please try refreshing.');
+                }}
+                onLoadedData={() => console.log('Remote video data loaded')}
+                onPlaying={() => console.log('Remote video playing')}
+                onStalled={() => console.log('Remote video stalled')}
               />
               
               {/* Local Video (Picture in Picture) */}
@@ -717,6 +818,13 @@ export default function VideoChat() {
                   muted
                   className="w-full h-full object-cover"
                   style={{ transform: 'scaleX(-1)' }}
+                  onError={(e) => {
+                    console.error('Local video error:', e);
+                    setError('Local video error. Please try refreshing.');
+                  }}
+                  onLoadedData={() => console.log('Local video data loaded')}
+                  onPlaying={() => console.log('Local video playing')}
+                  onStalled={() => console.log('Local video stalled')}
                 />
               </div>
 
