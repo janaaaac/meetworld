@@ -864,6 +864,7 @@ export default function VideoChat() {
                 ref={remoteVideoRef}
                 autoPlay
                 playsInline
+                muted
                 className="w-full h-full object-cover"
                 style={{ transform: 'scaleX(-1)' }}
                 onError={(e) => {
