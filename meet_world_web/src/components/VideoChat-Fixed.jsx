@@ -82,14 +82,14 @@ export default function VideoChat() {
           setError(`Connection failed: ${err.message}`);
         });
 
-        newSocket.on('matched', ({ partnerInfo: pInfo, roomId: rId }) => {
-          console.log('Matched with partner:', pInfo, 'in room', rId);
+        newSocket.on('matched', ({ partnerInfo: pInfo, roomId: rId, initiator }) => {
+          console.log('Matched with partner:', pInfo, 'in room', rId, 'initiator=', initiator);
           newSocket.emit('join-room', rId);
           setPartnerInfo(pInfo);
           setRoomId(rId);
           setIsConnected(true);
           setIsConnecting(false);
-          startVideoChat();
+          startVideoChat(initiator);
         });
 
         newSocket.on('signal', async (data) => {
@@ -251,13 +251,26 @@ export default function VideoChat() {
     }
   };
 
-  const startVideoChat = async () => {
-    try {
+  // Request a match from the server
+  const requestMatch = () => {
+    if (socket) {
       setIsConnecting(true);
       setError(null);
-      console.log('Starting video chat...');
+      socket.emit('join-video-chat', {
+        userInfo: { username: user.username, _id: user._id, gender: user.gender, location: user.location },
+        filters
+      });
+      console.log('Requested video chat match');
+    }
+  };
+
+  // Step 2: after server match, kick off WebRTC handshake
+  const startVideoChat = async (initiator = false) => {
+    try {
+      console.log('Starting video chat... initiator=', initiator);
+      setError(null);
       
-      // Reuse existing stream or request media if not yet enabled
+      // Reuse existing stream or request media
       let mediaStream = stream;
       if (!mediaStream) {
         mediaStream = await getUserMedia();
@@ -267,13 +280,12 @@ export default function VideoChat() {
         }
       }
 
-      // Dynamic import with error handling and retries
+      // Dynamic import of SimplePeer
       let Peer;
       try {
         const SimplePeer = await import('simple-peer').catch(async (err) => {
           console.error('Error loading simple-peer:', err);
-          // Retry once with a delay
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          await new Promise(res => setTimeout(res, 1000));
           return import('simple-peer');
         });
         Peer = SimplePeer.default;
@@ -284,17 +296,12 @@ export default function VideoChat() {
         return;
       }
 
-      // Configure peer with ICE servers
+      // Configure peer with initiator flag
       const newPeer = new Peer({
-        initiator: true,
+        initiator,
         trickle: false,
         stream: mediaStream,
-        config: {
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:global.stun.twilio.com:3478' }
-          ]
-        }
+        config: { iceServers: [ { urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:global.stun.twilio.com:3478' } ] }
       });
 
       // Add error handling for peer events
@@ -348,14 +355,9 @@ export default function VideoChat() {
       setPeer(newPeer);
       
     } catch (error) {
-      console.error('Start video chat error:', error);
+      console.error('Error starting video chat:', error);
       setError(`Failed to start video chat: ${error.message}`);
       setIsConnecting(false);
-      // Clean up any partial connections
-      if (peer) {
-        peer.destroy();
-        setPeer(null);
-      }
     }
   };
 
@@ -815,7 +817,7 @@ export default function VideoChat() {
                 )}
                 
                 <button
-                  onClick={startVideoChat}
+                  onClick={requestMatch}
                   className="px-8 py-3 bg-green-600 hover:bg-green-700 rounded-xl font-semibold text-lg transition-colors"
                 >
                   Start Video Chat
