@@ -16,7 +16,7 @@ import {
   Settings,
   Filter
 } from 'lucide-react';
-import { setupWebRTC, getWebRTCVersion } from '../utils/webrtc-helpers';
+import { setupWebRTC, getWebRTCVersion, initializeAudio } from '../utils/webrtc-helpers';
 import WebRTCFallback from './WebRTCFallback';
 
 export default function VideoChat() {
@@ -44,6 +44,7 @@ export default function VideoChat() {
     sameCountryOnly: false
   });
   const [roomId, setRoomId] = useState(null);
+  const [showAudioUnlock, setShowAudioUnlock] = useState(false);
   
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
@@ -54,6 +55,60 @@ export default function VideoChat() {
     const initializeComponent = async () => {
       try {
         console.log('Initializing VideoChat component...');
+        
+        // ENHANCED: Set up audio context early to allow for user interaction
+        try {
+          // Initialize audio using our helper
+          const audioResult = await initializeAudio();
+          
+          if (audioResult.success) {
+            console.log('Audio system successfully initialized');
+            
+            // Add event listener to resume audio context on user interaction
+            const resumeAudio = async () => {
+              try {
+                // Try to initialize audio again on user interaction
+                const result = await initializeAudio();
+                if (result.success) {
+                  console.log('Audio context resumed after user interaction');
+                }
+              } catch (e) {
+                console.warn('Error resuming audio on interaction:', e);
+              }
+            };
+            
+            // Add multiple event listeners for different user interactions
+            document.addEventListener('click', resumeAudio, { once: true });
+            document.addEventListener('touchstart', resumeAudio, { once: true });
+            document.addEventListener('keypress', resumeAudio, { once: true });
+            
+            // Create an unlocked audio element that can be played anywhere
+            const unlockAudio = document.createElement('audio');
+            unlockAudio.autoplay = true;
+            unlockAudio.muted = true;
+            unlockAudio.src = 'data:audio/mp3;base64,/+MYxAAAAANIAAAAAExBTUUzLjk4LjIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+            document.body.appendChild(unlockAudio);
+            
+            // Try to play the audio element
+            try {
+              await unlockAudio.play();
+              console.log('Successfully played unlock audio');
+            } catch (e) {
+              console.warn('Could not auto-play unlock audio:', e);
+            } finally {
+              // Clean up the element
+              setTimeout(() => {
+                if (unlockAudio.parentNode) {
+                  unlockAudio.parentNode.removeChild(unlockAudio);
+                }
+              }, 1000);
+            }
+          } else {
+            console.warn('Audio initialization failed:', audioResult.error);
+          }
+        } catch (e) {
+          console.warn('Could not initialize audio context:', e);
+        }
         
         // Set up WebRTC environment
         const webRTCHelpers = setupWebRTC();
@@ -455,30 +510,110 @@ export default function VideoChat() {
           console.warn('No video track in remote stream - might be video-off');
         }
 
-        // Handle audio track
+        // IMPROVED AUDIO FIX: Create separate audio element for better audio playback
         const audioTrack = stream.getAudioTracks()[0];
         if (audioTrack) {
           console.log('Remote audio track settings:', audioTrack.getSettings());
-          // Make sure audio is enabled and unmuted
+          // Make sure audio is enabled
           audioTrack.enabled = true;
           
-          // Add extra logging to debug audio issues
-          console.log('Remote audio track explicitly enabled:', {
-            id: audioTrack.id,
-            enabled: audioTrack.enabled,
-            muted: audioTrack.muted,
-            readyState: audioTrack.readyState
-          });
+          // Create a separate audio element for audio playback
+          try {
+            console.log('CRITICAL: Creating separate audio element for remote audio');
+            const audioElement = document.createElement('audio');
+            
+            // Create a new stream with just the audio track
+            const audioStream = new MediaStream([audioTrack]);
+            
+            // Configure the audio element - fix typo in autoplay (lowercase p)
+            audioElement.srcObject = audioStream;
+            audioElement.autoplay = true; // Fixed: was autoPlay (uppercase P)
+            audioElement.controls = false; // Hidden control
+            audioElement.volume = 1.0; // Full volume
+            audioElement.muted = false; // Explicitly unmuted
+            
+            // Set crossOrigin to anonymous to avoid CORS issues on some browsers
+            audioElement.crossOrigin = "anonymous";
+            
+            // Add to DOM with positioning to make it invisible
+            audioElement.style.position = 'absolute';
+            audioElement.style.opacity = '0';
+            audioElement.style.pointerEvents = 'none';
+            audioElement.style.height = '1px';
+            audioElement.style.width = '1px';
+            document.body.appendChild(audioElement);
+            
+            // Try to resume audio context first if available
+            try {
+              const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+              if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+              }
+            } catch (err) {
+              console.log('AudioContext not available or already running');
+            }
+            
+            // Start playback immediately
+            audioElement.play()
+              .then(() => {
+                console.log('Remote audio playing in separate element');
+                // Create an audio visualization to verify audio is working
+                try {
+                  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                  const source = audioCtx.createMediaStreamSource(audioStream);
+                  const analyser = audioCtx.createAnalyser();
+                  source.connect(analyser);
+                  
+                  // Update audio indicator
+                  updateAudioIndicator(analyser);
+                } catch (visErr) {
+                  console.warn('Could not create audio visualization:', visErr);
+                }
+              })
+              .catch(err => {
+                console.error('Error playing remote audio:', err);
+                
+                // Try on user interaction with visual indicator
+                setError('Click anywhere to enable audio playback');
+                
+                const enableAudio = () => {
+                  audioElement.play()
+                    .then(() => {
+                      console.log('Audio playing after user interaction');
+                      setError(null);
+                    })
+                    .catch(e => console.error('Failed to play audio after click:', e));
+                };
+                
+                document.addEventListener('click', enableAudio, { once: true });
+                document.addEventListener('touchstart', enableAudio, { once: true });
+              });
+              
+            // Store reference to remove it later
+            window._remoteAudioElement = audioElement;
+          } catch (err) {
+            console.error('Failed to set up separate audio element:', err);
+          }
         } else {
           console.warn('No audio track in remote stream - might be audio-off');
         }
 
-        // Try to attach to remote video element as soon as possible
+        // Set video stream to remote video element (without audio)
         if (remoteVideoRef.current) {
           try {
+            // Set stream to video element but keep it muted to avoid doubling the audio
             remoteVideoRef.current.srcObject = stream;
-            remoteVideoRef.current.muted = false; // Explicitly unmute
-            console.log('Remote video element configured with stream and unmuted');
+            remoteVideoRef.current.muted = true; // CRITICAL: Mute video element since we use separate audio element
+            console.log('Remote video element configured with stream');
+            
+            remoteVideoRef.current.play().catch(err => {
+              console.warn('Auto-play of remote video failed, will try on click', err);
+              
+              // Try to play on user interaction
+              remoteVideoRef.current.onclick = () => {
+                remoteVideoRef.current.play().catch(e => console.error('Play on click failed:', e));
+              };
+            });
           } catch (err) {
             console.error('Error attaching stream to video element:', err);
           }
@@ -498,6 +633,46 @@ export default function VideoChat() {
     }
   };
 
+  // Audio visualization helper
+  const updateAudioIndicator = (analyser) => {
+    if (!analyser || !isConnected) return;
+    
+    analyser.fftSize = 256;
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    
+    const checkAudio = () => {
+      if (!isConnected) return;
+      
+      analyser.getByteFrequencyData(dataArray);
+      
+      // Calculate average volume
+      let sum = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        sum += dataArray[i];
+      }
+      const average = sum / bufferLength;
+      
+      // Update indicator if we're still connected
+      const indicator = document.getElementById('audio-level-indicator');
+      if (indicator) {
+        // Show active if sound detected
+        if (average > 5) {
+          indicator.classList.add('audio-active');
+        } else {
+          indicator.classList.remove('audio-active');
+        }
+      }
+      
+      // Schedule next check if we're still connected
+      if (isConnected) {
+        requestAnimationFrame(checkAudio);
+      }
+    };
+    
+    checkAudio();
+  };
+
   const handleDisconnect = () => {
     console.log('Disconnecting...');
     
@@ -510,7 +685,7 @@ export default function VideoChat() {
         console.error('Error destroying peer:', err);
       }
       setPeer(null);
-     peerRef.current = null;
+      peerRef.current = null;
     }
 
     // Clean up remote stream
@@ -530,6 +705,30 @@ export default function VideoChat() {
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = null;
       remoteVideoRef.current.load(); // Force reload of video element
+    }
+    
+    // CRITICAL: Clean up the separate audio element if it exists
+    if (window._remoteAudioElement) {
+      try {
+        console.log('Cleaning up separate audio element');
+        // Stop playback
+        window._remoteAudioElement.pause();
+        
+        // Stop any tracks
+        if (window._remoteAudioElement.srcObject) {
+          window._remoteAudioElement.srcObject.getTracks().forEach(track => track.stop());
+        }
+        
+        // Remove from DOM
+        if (window._remoteAudioElement.parentNode) {
+          window._remoteAudioElement.parentNode.removeChild(window._remoteAudioElement);
+        }
+        
+        // Clear reference
+        window._remoteAudioElement = null;
+      } catch (err) {
+        console.error('Error cleaning up audio element:', err);
+      }
     }
     
     setIsConnected(false);
@@ -828,6 +1027,52 @@ export default function VideoChat() {
     }
   }, [isConnected, remoteStream]);
 
+  // Handle manual audio unlock
+  const unlockAudio = async () => {
+    console.log('Manual audio unlock requested');
+    try {
+      // Try direct audio context initialization
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AudioContext();
+      await ctx.resume();
+      
+      // Try to play the hidden audio element if it exists
+      if (window._remoteAudioElement) {
+        window._remoteAudioElement.play()
+          .then(() => {
+            console.log('Successfully played remote audio');
+            setShowAudioUnlock(false);
+          })
+          .catch(e => console.error('Failed to play audio after unlock:', e));
+      }
+      
+      // Initialize audio system
+      await initializeAudio();
+      
+      setShowAudioUnlock(false);
+    } catch (err) {
+      console.error('Manual audio unlock failed:', err);
+    }
+  };
+  
+  // Show unlock button if audio doesn't play within 5 seconds of connection
+  useEffect(() => {
+    let timer;
+    if (isConnected) {
+      timer = setTimeout(() => {
+        // Check if we might need audio unlock
+        if (window._remoteAudioElement) {
+          const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          if (audioCtx.state === 'suspended') {
+            setShowAudioUnlock(true);
+          }
+        }
+      }, 5000);
+    }
+    
+    return () => clearTimeout(timer);
+  }, [isConnected]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
@@ -967,6 +1212,19 @@ export default function VideoChat() {
           {skipNotification}
         </div>
       )}
+      
+      {/* Audio Unlock Button */}
+      {showAudioUnlock && isConnected && (
+        <div className="fixed top-20 left-1/2 transform -translate-x-1/2 bg-blue-600/90 text-white px-6 py-3 rounded-lg z-40 shadow-lg flex items-center space-x-2">
+          <span>Can't hear audio?</span>
+          <button 
+            onClick={unlockAudio}
+            className="bg-white text-blue-600 px-3 py-1 rounded-md font-medium hover:bg-blue-50 transition-colors"
+          >
+            Click to Enable Audio
+          </button>
+        </div>
+      )}
 
       {/* Header */}
       <div className="bg-gray-800 p-4 flex justify-between items-center">
@@ -1079,7 +1337,7 @@ export default function VideoChat() {
                 ref={remoteVideoRef}
                 autoPlay
                 playsInline
-                muted={false}
+                muted={true} /* CRITICAL: Keep video muted to avoid audio issues, we're using separate audio element */
                 className="w-full h-full object-cover"
                 style={{ transform: 'scaleX(-1)' }}
                 onError={(e) => {
@@ -1090,6 +1348,30 @@ export default function VideoChat() {
                 onPlaying={() => console.log('Remote video playing')}
                 onStalled={() => console.log('Remote video stalled')}
               />
+              
+              {/* Enhanced Audio Indicator - Visual feedback with live level detection */}
+              <div id="audio-level-indicator" className="absolute bottom-32 left-4 bg-black/60 backdrop-blur-sm rounded-full p-2 transition-all duration-200">
+                <div className="flex items-center space-x-1">
+                  <div className="w-1 h-4 bg-green-400/50 rounded-full transition-all duration-100"></div>
+                  <div className="w-1 h-6 bg-green-400/50 rounded-full transition-all duration-100"></div>
+                  <div className="w-1 h-8 bg-green-400/50 rounded-full transition-all duration-100"></div>
+                  <div className="w-1 h-5 bg-green-400/50 rounded-full transition-all duration-100"></div>
+                  <div className="w-1 h-3 bg-green-400/50 rounded-full transition-all duration-100"></div>
+                  <span className="text-xs text-white ml-1">Audio</span>
+                </div>
+              </div>
+              
+              {/* Add CSS for audio indicator */}
+              <style jsx>{`
+                #audio-level-indicator.audio-active div {
+                  background-color: rgb(74, 222, 128);
+                  animation: pulse 0.5s infinite alternate;
+                }
+                @keyframes pulse {
+                  0% { opacity: 0.7; }
+                  100% { opacity: 1; }
+                }
+              `}</style>
               
               {/* Local Video (Picture in Picture) */}
               <div className="absolute top-4 right-4 w-48 h-36 bg-gray-800 rounded-lg overflow-hidden border-2 border-gray-600">
@@ -1246,6 +1528,24 @@ export default function VideoChat() {
           )}
         </div>
       </div>
+
+      {/* Emergency Audio Unlock Button */}
+      {showAudioUnlock && (
+        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50">
+          <div className="flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            <span className="text-sm font-semibold">Audio is locked. Click to unlock and enable audio playback.</span>
+          </div>
+          <button
+            onClick={unlockAudio}
+            className="mt-2 px-4 py-2 bg-white text-green-600 rounded-lg font-semibold transition-colors hover:bg-gray-100"
+          >
+            Unlock Audio
+          </button>
+        </div>
+      )}
     </div>
   );
 }

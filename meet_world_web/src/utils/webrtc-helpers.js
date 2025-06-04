@@ -1,4 +1,3 @@
-
 /**
  * WebRTC helper functions to ensure proper setup and compatibility
  */
@@ -95,4 +94,54 @@ export function getWebRTCVersion() {
   }
   
   return version;
+}
+
+// Add helper for audio initialization
+export async function initializeAudio() {
+  try {
+    console.log('Initializing audio subsystem...');
+    
+    // Create an audio context
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) {
+      throw new Error('AudioContext not supported in this browser');
+    }
+    
+    const audioCtx = new AudioContext();
+    console.log('AudioContext state:', audioCtx.state);
+    
+    // If context is in suspended state, try to resume it
+    if (audioCtx.state === 'suspended') {
+      try {
+        await audioCtx.resume();
+        console.log('AudioContext resumed:', audioCtx.state);
+      } catch (resumeErr) {
+        console.warn('Could not resume AudioContext:', resumeErr);
+      }
+    }
+    
+    // Create a silent oscillator to "warm up" the audio system
+    const oscillator = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+    
+    // Set the gain to 0 (silent)
+    gainNode.gain.value = 0;
+    
+    // Connect and start the oscillator
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    oscillator.start();
+    oscillator.stop(audioCtx.currentTime + 0.001); // Stop after 1ms
+    
+    return {
+      success: true,
+      context: audioCtx
+    };
+  } catch (err) {
+    console.error('Error initializing audio:', err);
+    return {
+      success: false,
+      error: err.message
+    };
+  }
 }

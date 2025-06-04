@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio/Video Test - Meet World</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #0f172a;
+      color: #f1f5f9;
+      margin: 0;
+      padding: 20px;
+      line-height: 1.5;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    h1 {
+      font-size: 24px;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    .test-section {
+      background-color: #1e293b;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .test-section h2 {
+      font-size: 18px;
+      margin-top: 0;
+      margin-bottom: 15px;
+    }
+    .buttons {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    button {
+      background-color: #3b82f6;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover {
+      background-color: #2563eb;
+    }
+    button.error {
+      background-color: #ef4444;
+    }
+    button.success {
+      background-color: #10b981;
+    }
+    .video-container {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+    video {
+      background-color: #0f172a;
+      border-radius: 8px;
+      max-width: 100%;
+      height: auto;
+    }
+    .meter-container {
+      height: 30px;
+      background-color: #0f172a;
+      border-radius: 4px;
+      position: relative;
+      overflow: hidden;
+    }
+    .meter {
+      height: 100%;
+      background-color: #10b981;
+      width: 0%;
+      transition: width 0.1s ease;
+    }
+    .status {
+      margin-top: 8px;
+      font-size: 14px;
+    }
+    .log {
+      background-color: #0f172a;
+      padding: 10px;
+      border-radius: 4px;
+      font-family: monospace;
+      height: 100px;
+      overflow-y: auto;
+      margin-top: 10px;
+      font-size: 12px;
+    }
+    .device-list {
+      margin-top: 10px;
+      font-size: 14px;
+    }
+    .device-item {
+      padding: 5px 0;
+      border-bottom: 1px solid #334155;
+    }
+    footer {
+      text-align: center;
+      margin-top: 30px;
+      font-size: 14px;
+      color: #94a3b8;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Meet World Audio/Video Test</h1>
+    
+    <div class="test-section">
+      <h2>Camera Test</h2>
+      <div class="buttons">
+        <button id="startCamera">Start Camera</button>
+        <button id="stopCamera">Stop Camera</button>
+      </div>
+      <div class="video-container">
+        <video id="videoElement" width="400" height="300" autoplay playsinline muted></video>
+      </div>
+      <div class="status" id="cameraStatus">Camera not started</div>
+    </div>
+    
+    <div class="test-section">
+      <h2>Microphone Test</h2>
+      <div class="buttons">
+        <button id="startMic">Start Microphone</button>
+        <button id="stopMic">Stop Microphone</button>
+      </div>
+      <div class="meter-container">
+        <div class="meter" id="audioMeter"></div>
+      </div>
+      <div class="status" id="micStatus">Microphone not started</div>
+    </div>
+    
+    <div class="test-section">
+      <h2>Audio Playback Test</h2>
+      <div class="buttons">
+        <button id="playTestSound">Play Test Sound</button>
+        <button id="unlockAudio">Unlock Audio (iOS/Safari)</button>
+      </div>
+      <div class="status" id="audioStatus">Not tested</div>
+    </div>
+    
+    <div class="test-section">
+      <h2>Available Devices</h2>
+      <div class="buttons">
+        <button id="refreshDevices">Refresh Device List</button>
+      </div>
+      <div class="device-list" id="deviceList">Loading devices...</div>
+    </div>
+    
+    <div class="test-section">
+      <h2>Debug Log</h2>
+      <div class="log" id="log"></div>
+    </div>
+    
+    <div class="buttons">
+      <button id="startVideoChat" class="success">Go to Video Chat</button>
+    </div>
+    
+    <footer>
+      If all tests pass but you still have issues in the video chat, please try using the latest version of Chrome or Firefox.
+    </footer>
+  </div>
+  
+  <script>
+    // DOM elements
+    const videoElement = document.getElementById('videoElement');
+    const audioMeter = document.getElementById('audioMeter');
+    const cameraStatus = document.getElementById('cameraStatus');
+    const micStatus = document.getElementById('micStatus');
+    const audioStatus = document.getElementById('audioStatus');
+    const deviceList = document.getElementById('deviceList');
+    const logElement = document.getElementById('log');
+    
+    // Global variables
+    let stream = null;
+    let audioContext = null;
+    let analyser = null;
+    let dataArray = null;
+    let animationFrameId = null;
+    
+    // Log function
+    function log(message) {
+      console.log(message);
+      const entry = document.createElement('div');
+      entry.textContent = `${new Date().toLocaleTimeString()} - ${message}`;
+      logElement.appendChild(entry);
+      logElement.scrollTop = logElement.scrollHeight;
+    }
+    
+    // Start camera
+    document.getElementById('startCamera').addEventListener('click', async () => {
+      try {
+        // Stop any existing stream
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+        }
+        
+        // Get new stream with video only
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { 
+            width: { ideal: 1280 },
+            height: { ideal: 720 } 
+          }
+        });
+        
+        // Set to video element
+        videoElement.srcObject = stream;
+        
+        // Update UI
+        cameraStatus.textContent = 'Camera active';
+        cameraStatus.style.color = '#10b981';
+        log('Camera started successfully');
+      } catch (error) {
+        log(`Error starting camera: ${error.message}`);
+        cameraStatus.textContent = `Error: ${error.message}`;
+        cameraStatus.style.color = '#ef4444';
+      }
+    });
+    
+    // Stop camera
+    document.getElementById('stopCamera').addEventListener('click', () => {
+      if (stream) {
+        stream.getVideoTracks().forEach(track => track.stop());
+        videoElement.srcObject = null;
+        cameraStatus.textContent = 'Camera stopped';
+        cameraStatus.style.color = '';
+        log('Camera stopped');
+      }
+    });
+    
+    // Start microphone and audio visualization
+    document.getElementById('startMic').addEventListener('click', async () => {
+      try {
+        // Initialize audio context
+        if (!audioContext) {
+          audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          log('Audio context created');
+        }
+        
+        // Resume audio context if suspended
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+          log('Audio context resumed');
+        }
+        
+        // Get microphone stream
+        const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        
+        // Create analyser
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        const source = audioContext.createMediaStreamSource(micStream);
+        source.connect(analyser);
+        
+        const bufferLength = analyser.frequencyBinCount;
+        dataArray = new Uint8Array(bufferLength);
+        
+        // Update UI
+        micStatus.textContent = 'Microphone active - speak to see level';
+        micStatus.style.color = '#10b981';
+        log('Microphone started successfully');
+        
+        // Start visualization
+        visualize();
+        
+        // Store stream for cleanup
+        if (!stream) stream = micStream;
+        else {
+          // Add microphone track to existing stream
+          const existingVideoTrack = stream.getVideoTracks()[0];
+          if (existingVideoTrack) {
+            stream = new MediaStream([existingVideoTrack, ...micStream.getAudioTracks()]);
+          } else {
+            stream = micStream;
+          }
+        }
+      } catch (error) {
+        log(`Error starting microphone: ${error.message}`);
+        micStatus.textContent = `Error: ${error.message}`;
+        micStatus.style.color = '#ef4444';
+      }
+    });
+    
+    // Audio visualization
+    function visualize() {
+      if (!analyser) return;
+      
+      analyser.getByteFrequencyData(dataArray);
+      
+      // Calculate average volume
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i];
+      }
+      const average = sum / dataArray.length;
+      
+      // Update meter (0-100%)
+      const level = Math.min(100, average * 2);
+      audioMeter.style.width = `${level}%`;
+      
+      // Change color based on volume
+      if (level < 10) {
+        audioMeter.style.backgroundColor = '#94a3b8'; // Silent
+      } else if (level < 30) {
+        audioMeter.style.backgroundColor = '#10b981'; // Normal
+      } else if (level < 70) {
+        audioMeter.style.backgroundColor = '#f59e0b'; // Loud
+      } else {
+        audioMeter.style.backgroundColor = '#ef4444'; // Very loud
+      }
+      
+      animationFrameId = requestAnimationFrame(visualize);
+    }
+    
+    // Stop microphone
+    document.getElementById('stopMic').addEventListener('click', () => {
+      if (stream) {
+        stream.getAudioTracks().forEach(track => track.stop());
+        micStatus.textContent = 'Microphone stopped';
+        micStatus.style.color = '';
+        log('Microphone stopped');
+        
+        if (animationFrameId) {
+          cancelAnimationFrame(animationFrameId);
+          animationFrameId = null;
+        }
+        
+        audioMeter.style.width = '0%';
+      }
+    });
+    
+    // Play test sound
+    document.getElementById('playTestSound').addEventListener('click', async () => {
+      try {
+        // Create context if needed
+        if (!audioContext) {
+          audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        
+        // Resume context if needed
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
+        
+        // Create oscillator for test tone
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(440, audioContext.currentTime); // 440Hz (A4)
+        
+        gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+        gainNode.gain.linearRampToValueAtTime(0.5, audioContext.currentTime + 0.1);
+        gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 1);
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        oscillator.start();
+        oscillator.stop(audioContext.currentTime + 1);
+        
+        audioStatus.textContent = 'Test sound playing - did you hear it?';
+        audioStatus.style.color = '#10b981';
+        log('Test sound played');
+      } catch (error) {
+        log(`Error playing test sound: ${error.message}`);
+        audioStatus.textContent = `Error: ${error.message}`;
+        audioStatus.style.color = '#ef4444';
+      }
+    });
+    
+    // Unlock audio (for iOS/Safari)
+    document.getElementById('unlockAudio').addEventListener('click', async () => {
+      try {
+        // Create silent audio element
+        const silentAudio = new Audio();
+        silentAudio.src = 'data:audio/mp3;base64,/+MYxAAAAANIAAAAAExBTUUzLjk4LjIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+        
+        // Play it
+        await silentAudio.play();
+        
+        // Try to resume audio context
+        if (audioContext && audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
+        
+        log('Audio unlocked successfully');
+        audioStatus.textContent = 'Audio unlocked - try the test sound now';
+        audioStatus.style.color = '#10b981';
+      } catch (error) {
+        log(`Error unlocking audio: ${error.message}`);
+        audioStatus.textContent = 'Failed to unlock audio. Try tapping elsewhere on the page first.';
+        audioStatus.style.color = '#ef4444';
+      }
+    });
+    
+    // List available devices
+    async function listDevices() {
+      try {
+        deviceList.innerHTML = '';
+        
+        // Request permission first with getUserMedia to get meaningful device labels
+        try {
+          const tempStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+          tempStream.getTracks().forEach(track => track.stop());
+        } catch (err) {
+          log('Permission request failed, device labels may be limited');
+        }
+        
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        
+        if (devices.length === 0) {
+          deviceList.textContent = 'No devices found';
+          return;
+        }
+        
+        // Group by type
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        const audioInputDevices = devices.filter(device => device.kind === 'audioinput');
+        const audioOutputDevices = devices.filter(device => device.kind === 'audiooutput');
+        
+        // Add video devices
+        if (videoDevices.length > 0) {
+          const videoHeader = document.createElement('h3');
+          videoHeader.textContent = 'Video Devices:';
+          deviceList.appendChild(videoHeader);
+          
+          videoDevices.forEach(device => {
+            const div = document.createElement('div');
+            div.className = 'device-item';
+            div.textContent = device.label || `Camera ${device.deviceId.substr(0, 5)}...`;
+            deviceList.appendChild(div);
+          });
+        }
+        
+        // Add audio input devices
+        if (audioInputDevices.length > 0) {
+          const audioInHeader = document.createElement('h3');
+          audioInHeader.textContent = 'Microphones:';
+          deviceList.appendChild(audioInHeader);
+          
+          audioInputDevices.forEach(device => {
+            const div = document.createElement('div');
+            div.className = 'device-item';
+            div.textContent = device.label || `Microphone ${device.deviceId.substr(0, 5)}...`;
+            deviceList.appendChild(div);
+          });
+        }
+        
+        // Add audio output devices
+        if (audioOutputDevices.length > 0) {
+          const audioOutHeader = document.createElement('h3');
+          audioOutHeader.textContent = 'Speakers:';
+          deviceList.appendChild(audioOutHeader);
+          
+          audioOutputDevices.forEach(device => {
+            const div = document.createElement('div');
+            div.className = 'device-item';
+            div.textContent = device.label || `Speaker ${device.deviceId.substr(0, 5)}...`;
+            deviceList.appendChild(div);
+          });
+        }
+        
+        log(`Found ${videoDevices.length} cameras, ${audioInputDevices.length} microphones, ${audioOutputDevices.length} speakers`);
+      } catch (error) {
+        log(`Error listing devices: ${error.message}`);
+        deviceList.textContent = `Error: ${error.message}`;
+      }
+    }
+    
+    // Refresh device list
+    document.getElementById('refreshDevices').addEventListener('click', listDevices);
+    
+    // Start video chat button
+    document.getElementById('startVideoChat').addEventListener('click', () => {
+      window.location.href = '/';
+    });
+    
+    // Initialize
+    window.addEventListener('DOMContentLoaded', async () => {
+      log('Test page loaded');
+      
+      // Check browser capabilities
+      log(`Browser: ${navigator.userAgent}`);
+      
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        log('getUserMedia supported');
+      } else {
+        log('ERROR: getUserMedia not supported');
+      }
+      
+      if (window.AudioContext || window.webkitAudioContext) {
+        log('AudioContext supported');
+      } else {
+        log('ERROR: AudioContext not supported');
+      }
+      
+      // List devices
+      await listDevices();
+    });
+    
+    // Clean up on page unload
+    window.addEventListener('beforeunload', () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+      
+      if (audioContext) {
+        audioContext.close();
+      }
+    });
+  </script>
+</body>
+</html>
