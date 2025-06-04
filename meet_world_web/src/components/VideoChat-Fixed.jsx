@@ -86,7 +86,9 @@ export default function VideoChat() {
             const unlockAudio = document.createElement('audio');
             unlockAudio.autoplay = true;
             unlockAudio.muted = true;
-            unlockAudio.src = 'data:audio/mp3;base64,/+MYxAAAAANIAAAAAExBTUUzLjk4LjIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+            
+            // Use a more reliable silent audio - 1 second of silence as WAV
+            unlockAudio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
             document.body.appendChild(unlockAudio);
             
             // Try to play the audio element
@@ -335,15 +337,11 @@ export default function VideoChat() {
     if (socket) {
       setIsConnecting(true);
       setError(null);
-      
-      // Store the start time for connection tracking
-      window._connectionStartTime = Date.now();
-      
       socket.emit('join-video-chat', {
         userInfo: { username: user.username, _id: user._id, gender: user.gender, location: user.location },
         filters
       });
-      console.log('Requested video chat match at', new Date().toLocaleTimeString());
+      console.log('Requested video chat match');
     }
   };
 
@@ -452,19 +450,8 @@ export default function VideoChat() {
       // Listen for connection events
       newPeer.on('connect', () => {
         console.log('Peer connection established successfully');
-        // Explicitly update state to show connected UI
         setIsConnected(true);
         setIsConnecting(false);
-        
-        // Force state update to ensure the UI changes
-        setTimeout(() => {
-          // Double-check that we're still showing as connected
-          if (!isConnected) {
-            console.log('Forcing connected state update');
-            setIsConnected(true);
-            setIsConnecting(false);
-          }
-        }, 500);
       });
 
       // Handle peer connection lifecycle events
@@ -635,15 +622,8 @@ export default function VideoChat() {
         }
 
         setRemoteStream(stream);
-        
-        // CRITICAL FIX: Ensure we properly update connection state to exit the connecting screen
-        console.log('Connection complete - received remote stream, updating UI state');
         setIsConnected(true);
         setIsConnecting(false);
-        
-        // Log connection time
-        const connectionTime = Math.round((Date.now() - window._connectionStartTime || 0) / 1000);
-        console.log(`Connection established in approximately ${connectionTime} seconds`);
       });
 
       setPeer(newPeer);
@@ -651,18 +631,6 @@ export default function VideoChat() {
     } catch (error) {
       console.error('Error starting video chat:', error);
       setError(`Failed to start video chat: ${error.message}`);
-      setIsConnecting(false);
-    }
-  };
-
-  // Force update connection state - helper for connection state issues
-  const forceConnectionState = (connected = true) => {
-    console.log('Forcing connection state update:', connected ? 'connected' : 'disconnected');
-    if (connected) {
-      setIsConnected(true);
-      setIsConnecting(false);
-    } else {
-      setIsConnected(false);
       setIsConnecting(false);
     }
   };
@@ -1008,29 +976,6 @@ export default function VideoChat() {
       };
     }
   }, [remoteStream]);
-
-  // Add additional safety check to ensure UI updates when remote stream is available
-  useEffect(() => {
-    // If we have a remote stream but aren't showing as connected, fix it
-    if (remoteStream && !isConnected) {
-      console.log('Remote stream exists but UI shows disconnected - fixing state');
-      forceConnectionState(true);
-    }
-    
-    // Set a timer to ensure we don't stay in connecting state for too long
-    if (isConnecting) {
-      const timeoutCheck = setTimeout(() => {
-        // If we've been connecting for more than 20 seconds with a remote stream, force connected
-        const connectionTime = Math.round((Date.now() - window._connectionStartTime) / 1000);
-        if (connectionTime > 20 && remoteStream) {
-          console.log(`Still showing connecting after ${connectionTime}s with a remote stream - fixing state`);
-          forceConnectionState(true);
-        }
-      }, 20000); // 20 seconds
-      
-      return () => clearTimeout(timeoutCheck);
-    }
-  }, [remoteStream, isConnected, isConnecting]);
 
   // Ensure camera preview always gets the stream during connecting state
   useEffect(() => {
