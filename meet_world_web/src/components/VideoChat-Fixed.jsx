@@ -87,8 +87,7 @@ export default function VideoChat() {
           newSocket.emit('join-room', rId);
           setPartnerInfo(pInfo);
           setRoomId(rId);
-          setIsConnected(true);
-          setIsConnecting(false);
+          // start WebRTC handshake; on peer.connect we’ll set isConnected
           startVideoChat(initiator);
         });
 
