@@ -427,6 +427,8 @@ export default function VideoChat() {
         const videoTrack = stream.getVideoTracks()[0];
         if (videoTrack) {
           console.log('Remote video track settings:', videoTrack.getSettings());
+          // Ensure video track is enabled
+          videoTrack.enabled = true;
         } else {
           console.warn('No video track in remote stream - might be video-off');
         }
@@ -435,10 +437,29 @@ export default function VideoChat() {
         const audioTrack = stream.getAudioTracks()[0];
         if (audioTrack) {
           console.log('Remote audio track settings:', audioTrack.getSettings());
-          // Make sure audio is enabled
+          // Make sure audio is enabled and unmuted
           audioTrack.enabled = true;
+          
+          // Add extra logging to debug audio issues
+          console.log('Remote audio track explicitly enabled:', {
+            id: audioTrack.id,
+            enabled: audioTrack.enabled,
+            muted: audioTrack.muted,
+            readyState: audioTrack.readyState
+          });
         } else {
           console.warn('No audio track in remote stream - might be audio-off');
+        }
+
+        // Try to attach to remote video element as soon as possible
+        if (remoteVideoRef.current) {
+          try {
+            remoteVideoRef.current.srcObject = stream;
+            remoteVideoRef.current.muted = false; // Explicitly unmute
+            console.log('Remote video element configured with stream and unmuted');
+          } catch (err) {
+            console.error('Error attaching stream to video element:', err);
+          }
         }
 
         setRemoteStream(stream);
@@ -637,9 +658,7 @@ export default function VideoChat() {
         }
       };
     }
-  }, [stream]);
-
-  useEffect(() => {
+  }, [stream]);      useEffect(() => {
     if (remoteStream && remoteVideoRef.current) {
       console.log('Setting up remote video stream in useEffect');
       
@@ -653,6 +672,19 @@ export default function VideoChat() {
 
           // Set new stream and log state
           remoteVideoRef.current.srcObject = remoteStream;
+          
+          // Make sure audio tracks are enabled
+          const audioTracks = remoteStream.getAudioTracks();
+          if (audioTracks.length > 0) {
+            audioTracks.forEach(track => {
+              track.enabled = true;
+              console.log('Remote audio track enabled:', track.id);
+            });
+          } else {
+            console.warn('No audio tracks found in remote stream');
+          }
+          
+          // Log the state of all tracks
           console.log('Remote video track state:', {
             tracks: remoteStream.getTracks().map(t => ({
               kind: t.kind,
@@ -662,6 +694,10 @@ export default function VideoChat() {
             }))
           });
 
+          // Ensure video element is not muted
+          remoteVideoRef.current.muted = false;
+          console.log('Remote video muted property set to:', remoteVideoRef.current.muted);
+          
           // Wait for metadata and attempt to play
           await new Promise((resolve) => {
             if (remoteVideoRef.current.readyState >= 2) {
@@ -671,8 +707,33 @@ export default function VideoChat() {
             }
           });
 
-          await remoteVideoRef.current.play();
-          console.log('Remote video playing successfully');
+          try {
+            await remoteVideoRef.current.play();
+            console.log('Remote video playing successfully');
+          } catch (playErr) {
+            console.error('Error auto-playing remote video - may need user interaction:', playErr);
+            // Add a visual indicator that user needs to click to enable audio
+            setError('Click on the video to enable audio');
+            
+            // Try to autoplay without sound and then enable sound after user interaction
+            remoteVideoRef.current.muted = true;
+            await remoteVideoRef.current.play();
+            
+            // Add click handler to unmute
+            const clickHandler = async () => {
+              try {
+                remoteVideoRef.current.muted = false;
+                await remoteVideoRef.current.play();
+                console.log('Remote video unmuted after user interaction');
+                setError(null);
+                // Remove click handler once successful
+                remoteVideoRef.current.removeEventListener('click', clickHandler);
+              } catch (e) {
+                console.error('Failed to unmute on click:', e);
+              }
+            };
+            remoteVideoRef.current.addEventListener('click', clickHandler);
+          }
         } catch (err) {
           console.error('Error setting up remote video:', err);
           // Add UI feedback for video errors
@@ -712,7 +773,36 @@ export default function VideoChat() {
   useEffect(() => {
     if (isConnected && remoteStream && remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = remoteStream;
-      remoteVideoRef.current.play().catch(err => console.error('Error playing remote video in connected state', err));
+      remoteVideoRef.current.muted = false; // Ensure it's not muted
+      
+      // Try to play the video and handle autoplay restrictions
+      const playVideo = async () => {
+        try {
+          await remoteVideoRef.current.play();
+          console.log('Remote video playing in connected state');
+        } catch (err) {
+          console.error('Error playing remote video in connected state - might need user interaction:', err);
+          
+          // Add click-to-play functionality
+          const handleClick = async () => {
+            try {
+              remoteVideoRef.current.muted = false; // Ensure unmuted on click
+              await remoteVideoRef.current.play();
+              console.log('Remote video playing after user interaction');
+              setError(null); // Clear any error message
+              document.removeEventListener('click', handleClick);
+            } catch (clickErr) {
+              console.error('Error playing on click:', clickErr);
+            }
+          };
+          
+          // Add a visual indicator that user needs to interact
+          setError('Click anywhere to enable audio and video');
+          document.addEventListener('click', handleClick, { once: true });
+        }
+      };
+      
+      playVideo();
     }
   }, [isConnected, remoteStream]);
 
@@ -956,6 +1046,7 @@ export default function VideoChat() {
                 ref={remoteVideoRef}
                 autoPlay
                 playsInline
+                muted={false}
                 className="w-full h-full object-cover"
                 style={{ transform: 'scaleX(-1)' }}
                 onError={(e) => {
