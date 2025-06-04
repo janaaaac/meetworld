@@ -16,6 +16,8 @@ import {
   Settings,
   Filter
 } from 'lucide-react';
+import { setupWebRTC, getWebRTCVersion } from '../utils/webrtc-helpers';
+import WebRTCFallback from './WebRTCFallback';
 
 export default function VideoChat() {
   const [user, setUser] = useState(null);
@@ -52,6 +54,16 @@ export default function VideoChat() {
     const initializeComponent = async () => {
       try {
         console.log('Initializing VideoChat component...');
+        
+        // Set up WebRTC environment
+        const webRTCHelpers = setupWebRTC();
+        console.log('WebRTC support check:', webRTCHelpers.isWebRTCSupported ? 'Supported' : 'Not supported');
+        console.log('WebRTC version:', getWebRTCVersion());
+        
+        if (!webRTCHelpers.isWebRTCSupported) {
+          setError('WebRTC is not supported in this browser. Please try Chrome, Firefox, or Safari.');
+          return;
+        }
         
         // Check authentication
         const token = localStorage.getItem('token');
@@ -293,18 +305,28 @@ export default function VideoChat() {
         }
       }
 
-      // Dynamic import of SimplePeer
+      // Use the helper to load SimplePeer
       let Peer;
       try {
-        const SimplePeer = await import('simple-peer').catch(async (err) => {
-          console.error('Error loading simple-peer:', err);
-          await new Promise(res => setTimeout(res, 1000));
-          return import('simple-peer');
-        });
-        Peer = SimplePeer.default;
+        // Load simple-peer with the helper function
+        console.log('Attempting to import simple-peer with helper...');
+        
+        const webRTCHelpers = setupWebRTC();
+        const SimplePeer = await webRTCHelpers.loadSimplePeer();
+        
+        console.log('SimplePeer import successful, checking for default export');
+        // Check if default export exists before using it
+        if (!SimplePeer.default) {
+          console.warn('SimplePeer has no default export. Available exports:', Object.keys(SimplePeer));
+          // Try CommonJS/UMD fallback
+          Peer = SimplePeer;
+        } else {
+          Peer = SimplePeer.default;
+        }
+        console.log('SimplePeer initialized successfully');
       } catch (err) {
         console.error('Failed to load simple-peer:', err);
-        setError('Failed to initialize video chat. Please check your connection and try again.');
+        setError(`Failed to initialize video chat: ${err.message}. Please check your network connection, try disabling any ad blockers, or try a different browser.`);
         setIsConnecting(false);
         return;
       }
@@ -818,6 +840,17 @@ export default function VideoChat() {
   }
 
   if (error) {
+    // Special handling for WebRTC connection errors
+    if (error.includes('WebRTC') || error.includes('video chat') || error.includes('simple-peer')) {
+      return (
+        <WebRTCFallback 
+          onRetry={() => window.location.reload()} 
+          errorMessage={error}
+        />
+      );
+    }
+    
+    // Standard error display for other errors
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="text-center">
