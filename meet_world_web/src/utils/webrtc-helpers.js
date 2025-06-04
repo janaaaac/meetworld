@@ -46,13 +46,12 @@ export function setupWebRTC() {
           window.Buffer = bufferModule.Buffer;
         }
         
-        // Try importing with explicit path first for better error messages
+        // Just use the default import path - the explicit path causes 404 errors
         try {
-          return await import('/node_modules/simple-peer/index.js');
-        } catch (specificErr) {
-          console.warn('Could not load simple-peer from specific path:', specificErr.message);
-          // Fall back to default import
           return await import('simple-peer');
+        } catch (err) {
+          console.error('Could not load simple-peer:', err.message);
+          throw new Error('Failed to load WebRTC peer library. Please check your network connection and try again.');
         }
       } catch (err) {
         console.error('Failed to load simple-peer:', err);
