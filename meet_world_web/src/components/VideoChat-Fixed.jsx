@@ -21,6 +21,8 @@ export default function VideoChat() {
   const [user, setUser] = useState(null);
   const [socket, setSocket] = useState(null);
   const [peer, setPeer] = useState(null);
+  const peerRef = useRef(null);
+  const signalQueueRef = useRef([]);
   const [stream, setStream] = useState(null);
   const [remoteStream, setRemoteStream] = useState(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -94,8 +96,11 @@ export default function VideoChat() {
 
         newSocket.on('signal', async (data) => {
           console.log('Received signal:', data);
-          if (peer) {
-            peer.signal(data);
+          if (peerRef.current) {
+            peerRef.current.signal(data);
+          } else {
+            console.warn('Queuing signal, peer not initialized yet');
+            signalQueueRef.current.push(data);
           }
         });
 
@@ -306,6 +311,12 @@ export default function VideoChat() {
         stream: mediaStream,
         config: { iceServers: [ { urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:global.stun.twilio.com:3478' } ] }
       });
+     // store peer instance and flush any queued signals
+      peerRef.current = newPeer;
+      if (signalQueueRef.current.length) {
+        signalQueueRef.current.forEach(sig => newPeer.signal(sig));
+        signalQueueRef.current = [];
+      }
 
       // Add error handling for peer events
       newPeer.on('error', (err) => {
@@ -376,6 +387,7 @@ export default function VideoChat() {
         console.error('Error destroying peer:', err);
       }
       setPeer(null);
+     peerRef.current = null;
     }
 
     // Clean up remote stream
@@ -419,7 +431,7 @@ export default function VideoChat() {
     if (socket && isConnected) {
       // Notify the backend that we're skipping this user
       socket.emit('next-match', {
-        roomId: partnerInfo?.roomId,
+        roomId: roomId,
         userInfo: {
           username: user.username,
           _id: user._id,
