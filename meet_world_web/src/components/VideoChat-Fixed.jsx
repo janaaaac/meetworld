@@ -69,6 +69,7 @@ export default function VideoChat() {
         const { default: io } = await import('socket.io-client');
         
         const newSocket = io('https://meetworldbackend-production.up.railway.app', {
+          transports: ['websocket'], // use WebSocket only
           auth: { token }
         });
 
@@ -88,7 +89,7 @@ export default function VideoChat() {
           setPartnerInfo(pInfo);
           setRoomId(rId);
           // start WebRTC handshake; on peer.connect we’ll set isConnected
-          startVideoChat(initiator);
+          startVideoChat(initiator, rId);
         });
 
         newSocket.on('signal', async (data) => {
@@ -118,6 +119,8 @@ export default function VideoChat() {
 
         setSocket(newSocket);
         setIsLoading(false);
+        // Auto-request match for two logged-in users
+        requestMatch();
 
         // Cleanup function
         return () => {
@@ -264,7 +267,8 @@ export default function VideoChat() {
   };
 
   // Step 2: after server match, kick off WebRTC handshake
-  const startVideoChat = async (initiator = false) => {
+  // `room` passed from matched event avoids stale state
+  const startVideoChat = async (initiator = false, room = null) => {
     try {
       console.log('Starting video chat... initiator=', initiator);
       setError(null);
@@ -312,8 +316,8 @@ export default function VideoChat() {
 
       newPeer.on('signal', (data) => {
         console.log('Generated signal data:', data);
-        if (socket && roomId) {
-          socket.emit('signal', { roomId, signal: data });
+        if (socket && room) {
+          socket.emit('signal', { roomId: room, signal: data });
         }
       });
 
