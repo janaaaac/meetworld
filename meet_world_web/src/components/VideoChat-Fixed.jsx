@@ -97,10 +97,15 @@ export default function VideoChat() {
         newSocket.on('signal', async (data) => {
           console.log('Received signal:', data);
           if (peerRef.current) {
-            peerRef.current.signal(data);
+            // Extract the actual signal from the data object
+            if (data.signal) {
+              peerRef.current.signal(data.signal);
+            } else {
+              peerRef.current.signal(data); // Backward compatibility
+            }
           } else {
             console.warn('Queuing signal, peer not initialized yet');
-            signalQueueRef.current.push(data);
+            signalQueueRef.current.push(data.signal || data);
           }
         });
 
@@ -304,17 +309,43 @@ export default function VideoChat() {
         return;
       }
 
-      // Configure peer with initiator flag
+      // Configure peer with initiator flag and expanded ICE servers
       const newPeer = new Peer({
         initiator,
-        trickle: false,
+        trickle: true, // Enable trickle ICE for better connection success
         stream: mediaStream,
-        config: { iceServers: [ { urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:global.stun.twilio.com:3478' } ] }
+        config: { 
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun.stunprotocol.org:3478' },
+            { urls: 'stun:global.stun.twilio.com:3478' }
+            // Add TURN servers if available for better NAT traversal
+            /* Example TURN config:
+            {
+              urls: 'turn:your-turn-server.com:3478',
+              username: 'username',
+              credential: 'password'
+            }
+            */
+          ] 
+        }
       });
      // store peer instance and flush any queued signals
       peerRef.current = newPeer;
+      console.log(`Peer created. Processing ${signalQueueRef.current.length} queued signals`);
       if (signalQueueRef.current.length) {
-        signalQueueRef.current.forEach(sig => newPeer.signal(sig));
+        // Process each queued signal
+        signalQueueRef.current.forEach(sig => {
+          try {
+            console.log('Applying queued signal:', sig);
+            newPeer.signal(sig);
+          } catch (err) {
+            console.error('Error applying queued signal:', err);
+          }
+        });
+        // Clear the queue
         signalQueueRef.current = [];
       }
 
@@ -328,22 +359,52 @@ export default function VideoChat() {
       newPeer.on('signal', (data) => {
         console.log('Generated signal data:', data);
         if (socket && room) {
-          socket.emit('signal', { roomId: room, signal: data });
+          // Make sure to include the roomId for proper routing
+          socket.emit('signal', { 
+            roomId: room, 
+            signal: data,
+            userId: user?._id
+          });
         }
       });
 
+      // Listen for connection events
       newPeer.on('connect', () => {
-        console.log('Peer connection established');
+        console.log('Peer connection established successfully');
         setIsConnected(true);
         setIsConnecting(false);
       });
 
+      // Handle peer connection lifecycle events
       newPeer.on('close', () => {
         console.log('Peer connection closed');
         handleDisconnect();
       });
+      
+      // Log ICE connection state changes for debugging
+      newPeer._pc.addEventListener('iceconnectionstatechange', () => {
+        console.log('ICE connection state:', newPeer._pc.iceConnectionState);
+        
+        // Show specific message when ICE fails
+        if (newPeer._pc.iceConnectionState === 'failed') {
+          console.error('ICE connection failed - possible NAT/firewall issue');
+          setError('Connection failed. This may be due to a network issue.');
+        }
+      });
 
-      // Enhanced stream handling
+      // Monitor signaling state
+      newPeer._pc.addEventListener('signalingstatechange', () => {
+        console.log('Signaling state:', newPeer._pc.signalingState);
+      });
+      
+      // Log when candidates are generated
+      newPeer._pc.addEventListener('icecandidate', (event) => {
+        if (event.candidate) {
+          console.log('ICE candidate generated', event.candidate.candidate.substring(0, 50) + '...');
+        }
+      });
+
+      // Enhanced stream handling with better error checking
       newPeer.on('stream', async (stream) => {
         console.log('Received remote stream:', stream);
         if (!stream.active) {
@@ -351,19 +412,38 @@ export default function VideoChat() {
           return;
         }
 
-        const videoTrack = stream.getVideoTracks()[0];
-        if (!videoTrack) {
-          console.error('No video track in remote stream');
-          return;
-        }
-
-        console.log('Remote video track:', {
-          enabled: videoTrack.enabled,
-          readyState: videoTrack.readyState,
-          settings: videoTrack.getSettings()
+        // Log all tracks for debugging
+        stream.getTracks().forEach(track => {
+          console.log(`Remote ${track.kind} track:`, {
+            kind: track.kind,
+            enabled: track.enabled,
+            muted: track.muted,
+            readyState: track.readyState,
+            settings: track.getSettings()
+          });
         });
 
+        // Handle video track
+        const videoTrack = stream.getVideoTracks()[0];
+        if (videoTrack) {
+          console.log('Remote video track settings:', videoTrack.getSettings());
+        } else {
+          console.warn('No video track in remote stream - might be video-off');
+        }
+
+        // Handle audio track
+        const audioTrack = stream.getAudioTracks()[0];
+        if (audioTrack) {
+          console.log('Remote audio track settings:', audioTrack.getSettings());
+          // Make sure audio is enabled
+          audioTrack.enabled = true;
+        } else {
+          console.warn('No audio track in remote stream - might be audio-off');
+        }
+
         setRemoteStream(stream);
+        setIsConnected(true);
+        setIsConnecting(false);
       });
 
       setPeer(newPeer);
@@ -876,7 +956,6 @@ export default function VideoChat() {
                 ref={remoteVideoRef}
                 autoPlay
                 playsInline
-                muted
                 className="w-full h-full object-cover"
                 style={{ transform: 'scaleX(-1)' }}
                 onError={(e) => {
