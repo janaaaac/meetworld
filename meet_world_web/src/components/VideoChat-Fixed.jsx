@@ -780,7 +780,7 @@ export default function VideoChat() {
         </div>
       </div>
 
-      <div className="flex h-[calc(100vh-80px)]">
+      <div className="flex flex-col md:flex-row h-[calc(100vh-80px)]">
         {/* Video Section */}
         <div className="flex-1 relative">
           {!isConnected && !isConnecting && (
@@ -865,7 +865,7 @@ export default function VideoChat() {
                 autoPlay
                 playsInline
                 muted
-                className="w-full h-full object-cover"
+                className="w-full h-1/2 md:h-full object-cover"
                 style={{ transform: 'scaleX(-1)' }}
                 onError={(e) => {
                   console.error('Remote video error:', e);
@@ -876,8 +876,8 @@ export default function VideoChat() {
                 onStalled={() => console.log('Remote video stalled')}
               />
               
-              {/* Local Video (Picture in Picture) */}
-              <div className="absolute top-4 right-4 w-48 h-36 bg-gray-800 rounded-lg overflow-hidden border-2 border-gray-600">
+              {/* Local Video (Picture in Picture) - hidden on mobile */}
+              <div className="hidden md:block absolute top-4 right-4 w-48 h-36 bg-gray-800 rounded-lg overflow-hidden border-2 border-gray-600">
                 <video
                   ref={localVideoRef}
                   autoPlay
@@ -916,8 +916,8 @@ export default function VideoChat() {
                 </div>
               )}
 
-              {/* Chat Panel - Always visible when connected */}
-              <div className="absolute bottom-20 right-4 w-80 h-96 bg-black/70 backdrop-blur-sm rounded-lg border border-gray-600 flex flex-col">
+              {/* Chat Panel - hidden on xs, visible from sm */}
+              <div className="hidden sm:flex absolute bottom-20 right-4 w-80 h-96 bg-black/70 backdrop-blur-sm rounded-lg border border-gray-600 flex flex-col">
                 {/* Chat Header */}
                 <div className="p-3 border-b border-gray-600 flex justify-between items-center">
                   <h3 className="font-semibold text-white text-sm">Chat with {partnerInfo?.username}</h3>
