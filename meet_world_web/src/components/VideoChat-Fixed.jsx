@@ -348,269 +348,689 @@ export default function VideoChat() {
         });
 
         setRemoteStream(stream);
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = stream;
-          // force load and play the remote video
-          remoteVideoRef.current.load();
-          try {
-            await remoteVideoRef.current.play();
-            console.log('Remote video playing');
-          } catch (err) {
-            console.error('Error playing remote video:', err);
-          }
-        }
       });
 
       setPeer(newPeer);
       
     } catch (error) {
-      console.error('Error starting video chat:', error);
+      console.error('Start video chat error:', error);
       setError(`Failed to start video chat: ${error.message}`);
       setIsConnecting(false);
+      // Clean up any partial connections
+      if (peer) {
+        peer.destroy();
+        setPeer(null);
+      }
     }
   };
 
   const handleDisconnect = () => {
-    console.log('Handling disconnect...');
-    setIsConnected(false);
-    setPartnerInfo(null);
-    setRemoteStream(null);
-    setMessages([]);
+    console.log('Disconnecting...');
+    
+    // Clean up peer connection
     if (peer) {
-      peer.destroy();
+      try {
+        peer.removeAllListeners(); // Remove all event listeners
+        peer.destroy();
+      } catch (err) {
+        console.error('Error destroying peer:', err);
+      }
       setPeer(null);
     }
-    if (socket) {
-      socket.emit('leave-video-chat');
+
+    // Clean up remote stream
+    if (remoteStream) {
+      try {
+        remoteStream.getTracks().forEach(track => {
+          track.stop();
+          remoteStream.removeTrack(track);
+        });
+      } catch (err) {
+        console.error('Error cleaning up remote stream:', err);
+      }
+      setRemoteStream(null);
     }
+
+    // Clean up video elements
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = null;
+      remoteVideoRef.current.load(); // Force reload of video element
+    }
+    
+    setIsConnected(false);
+    setIsConnecting(false);
+    setPartnerInfo(null);
+    setMessages([]);
+
+    // Log cleanup completion
+    console.log('Cleanup completed');
   };
 
-  const handleSkip = () => {
-    console.log('Skipping to next partner...');
-    if (socket) {
-      socket.emit('skip-partner');
-    }
+  const findNewPartner = () => {
     handleDisconnect();
+    setTimeout(() => {
+      startVideoChat();
+    }, 500);
   };
 
-  const handleSendMessage = (e) => {
-    e.preventDefault();
-    if (!newMessage.trim() || !socket) return;
-    const message = {
-      text: newMessage.trim(),
-      timestamp: new Date().toISOString(),
-      fromPartner: false
-    };
-    setMessages(prev => [...prev, message]);
-    socket.emit('chat-message', message);
-    setNewMessage('');
-    scrollToBottom();
+  const skipCurrentUser = () => {
+    console.log('Skipping current user...');
+    
+    if (socket && isConnected) {
+      // Notify the backend that we're skipping this user
+      socket.emit('next-match', {
+        roomId: partnerInfo?.roomId,
+        userInfo: {
+          username: user.username,
+          _id: user._id,
+          gender: user.gender,
+          location: user.location
+        },
+        filters: filters
+      });
+    }
+    
+    // Disconnect from current user and find new partner
+    handleDisconnect();
+    
+    // Start looking for a new partner after a short delay
+    setTimeout(() => {
+      startVideoChat();
+    }, 500);
   };
 
-  const handleToggleVideo = () => {
-    if (peer) {
+  const toggleVideo = () => {
+    if (stream) {
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack) {
         videoTrack.enabled = !videoTrack.enabled;
         setIsVideoEnabled(videoTrack.enabled);
-        console.log('Toggled video:', videoTrack.enabled);
       }
     }
   };
 
-  const handleToggleAudio = () => {
-    if (peer) {
+  const toggleAudio = () => {
+    if (stream) {
       const audioTrack = stream.getAudioTracks()[0];
       if (audioTrack) {
         audioTrack.enabled = !audioTrack.enabled;
         setIsAudioEnabled(audioTrack.enabled);
-        console.log('Toggled audio:', audioTrack.enabled);
       }
     }
   };
 
-  const handleLogout = () => {
-    console.log('Logging out...');
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    navigate('/login');
+  const sendMessage = () => {
+    if (newMessage.trim() && socket && isConnected) {
+      const message = {
+        text: newMessage,
+        timestamp: new Date(),
+        sender: user.username
+      };
+      
+      socket.emit('chat-message', message);
+      setMessages(prev => [...prev, { ...message, fromPartner: false }]);
+      setNewMessage('');
+      scrollToBottom();
+    }
   };
 
-  const handleApplyFilters = (newFilters) => {
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      sendMessage();
+    }
+  };
+
+  const applyFilters = (newFilters) => {
     setFilters(newFilters);
     setShowFilters(false);
-    console.log('Applied filters:', newFilters);
+    
+    // If currently connected, disconnect and find new match with filters
+    if (isConnected) {
+      handleDisconnect();
+      setTimeout(() => {
+        startVideoChat();
+      }, 500);
+    }
   };
+
+  useEffect(() => {
+    if (stream && localVideoRef.current) {
+      console.log('Setting up local video stream in useEffect');
+      
+      const setupLocalVideo = async () => {
+        try {
+          // Ensure any existing stream is cleaned up
+          if (localVideoRef.current.srcObject) {
+            const oldTracks = localVideoRef.current.srcObject.getTracks();
+            oldTracks.forEach(track => track.stop());
+          }
+
+          // Set new stream and log state
+          localVideoRef.current.srcObject = stream;
+          console.log('Local video track state:', {
+            tracks: stream.getTracks().map(t => ({
+              kind: t.kind,
+              enabled: t.enabled,
+              readyState: t.readyState,
+              muted: t.muted
+            }))
+          });
+
+          // Wait for metadata and attempt to play
+          await new Promise((resolve) => {
+            if (localVideoRef.current.readyState >= 2) {
+              resolve();
+            } else {
+              localVideoRef.current.onloadeddata = () => resolve();
+            }
+          });
+
+          await localVideoRef.current.play();
+          console.log('Local video playing successfully');
+        } catch (err) {
+          console.error('Error setting up local video:', err);
+          // Add UI feedback for video errors
+          setError(`Video setup error: ${err.message}. Try refreshing the page.`);
+        }
+      };
+
+      setupLocalVideo();
+
+      // Cleanup function
+      return () => {
+        if (localVideoRef.current && localVideoRef.current.srcObject) {
+          const tracks = localVideoRef.current.srcObject.getTracks();
+          tracks.forEach(track => track.stop());
+          localVideoRef.current.srcObject = null;
+        }
+      };
+    }
+  }, [stream]);
+
+  useEffect(() => {
+    if (remoteStream && remoteVideoRef.current) {
+      console.log('Setting up remote video stream in useEffect');
+      
+      const setupRemoteVideo = async () => {
+        try {
+          // Ensure any existing stream is cleaned up
+          if (remoteVideoRef.current.srcObject) {
+            const oldTracks = remoteVideoRef.current.srcObject.getTracks();
+            oldTracks.forEach(track => track.stop());
+          }
+
+          // Set new stream and log state
+          remoteVideoRef.current.srcObject = remoteStream;
+          console.log('Remote video track state:', {
+            tracks: remoteStream.getTracks().map(t => ({
+              kind: t.kind,
+              enabled: t.enabled,
+              readyState: t.readyState,
+              muted: t.muted
+            }))
+          });
+
+          // Wait for metadata and attempt to play
+          await new Promise((resolve) => {
+            if (remoteVideoRef.current.readyState >= 2) {
+              resolve();
+            } else {
+              remoteVideoRef.current.onloadeddata = () => resolve();
+            }
+          });
+
+          await remoteVideoRef.current.play();
+          console.log('Remote video playing successfully');
+        } catch (err) {
+          console.error('Error setting up remote video:', err);
+          // Add UI feedback for video errors
+          setError(`Remote video setup error: ${err.message}. Try refreshing the page.`);
+        }
+      };
+
+      setupRemoteVideo();
+
+      // Cleanup function
+      return () => {
+        if (remoteVideoRef.current && remoteVideoRef.current.srcObject) {
+          const tracks = remoteVideoRef.current.srcObject.getTracks();
+          tracks.forEach(track => track.stop());
+          remoteVideoRef.current.srcObject = null;
+        }
+      };
+    }
+  }, [remoteStream]);
+
+  // Ensure camera preview always gets the stream during connecting state
+  useEffect(() => {
+    if (isConnecting && stream && localVideoRef.current) {
+      localVideoRef.current.srcObject = stream;
+    }
+  }, [isConnecting, stream]);
+
+  // Ensure local preview in connected state
+  useEffect(() => {
+    if (isConnected && stream && localVideoRef.current) {
+      localVideoRef.current.srcObject = stream;
+      localVideoRef.current.play().catch(err => console.error('Error playing local video in connected state', err));
+    }
+  }, [isConnected, stream]);
+
+  // Ensure remote video playback after connection
+  useEffect(() => {
+    if (isConnected && remoteStream && remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = remoteStream;
+      remoteVideoRef.current.play().catch(err => console.error('Error playing remote video in connected state', err));
+    }
+  }, [isConnected, remoteStream]);
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-gray-900"></div>
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-400 mx-auto mb-4"></div>
+          <div className="text-white text-lg">Loading VideoChat...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-400 text-xl mb-4">⚠️ Error</div>
+          <div className="text-white text-lg mb-6">{error}</div>
+          <div className="space-x-4">
+            <button
+              onClick={() => window.location.reload()}
+              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors text-white"
+            >
+              Retry
+            </button>
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="px-6 py-3 bg-gray-600 hover:bg-gray-700 rounded-lg transition-colors text-white"
+            >
+              Back to Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="text-white">No user data available...</div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-screen">
-      <div className="flex-1 flex relative">
-        <video
-          ref={localVideoRef}
-          className="absolute inset-0 w-full h-full object-cover"
-          autoPlay
-          muted
-        />
-        {remoteStream && (
-          <video
-            ref={remoteVideoRef}
-            className="absolute inset-0 w-full h-full object-cover"
-            autoPlay
-          />
-        )}
-        <div className="m-4">
-          <button 
-            onClick={handleToggleVideo} 
-            className="p-2 rounded-full bg-white bg-opacity-75 hover:bg-opacity-100 transition"
-            title={isVideoEnabled ? "Disable Video" : "Enable Video"}
-          >
-            {isVideoEnabled ? <Video className="w-6 h-6 text-red-500" /> : <VideoOff className="w-6 h-6 text-green-500" />}
-          </button>
-          <button 
-            onClick={handleToggleAudio} 
-            className="p-2 rounded-full bg-white bg-opacity-75 hover:bg-opacity-100 transition ml-2"
-            title={isAudioEnabled ? "Disable Audio" : "Enable Audio"}
-          >
-            {isAudioEnabled ? <Mic className="w-6 h-6 text-red-500" /> : <MicOff className="w-6 h-6 text-green-500" />}
-          </button>
-          <button 
-            onClick={handleSkip} 
-            className="p-2 rounded-full bg-white bg-opacity-75 hover:bg-opacity-100 transition ml-2"
-            title="Skip Partner"
-          >
-            <SkipForward className="w-6 h-6 text-blue-500" />
-          </button>
-          <button 
-            onClick={handleLogout} 
-            className="p-2 rounded-full bg-white bg-opacity-75 hover:bg-opacity-100 transition ml-2"
-            title="Logout"
-          >
-            <LogOut className="w-6 h-6 text-gray-500" />
-          </button>
-        </div>
-      </div>
-      <div className="flex-none p-4 bg-gray-100">
-        <div className="flex items-center mb-4">
-          <div className="flex-1">
-            <h2 className="text-lg font-semibold">Video Chat</h2>
-          </div>
-          <div>
-            <button 
-              onClick={() => setShowFilters(true)} 
-              className="p-2 rounded-full bg-white bg-opacity-75 hover:bg-opacity-100 transition"
-              title="Filters"
-            >
-              <Filter className="w-6 h-6 text-gray-500" />
-            </button>
-          </div>
-        </div>
-        <div className="mb-4">
-          {skipNotification && (
-            <div className="p-2 bg-yellow-100 text-yellow-800 rounded-md mb-2">
-              {skipNotification}
+    <div className="min-h-screen bg-gray-900 text-white">
+      {/* Filters Modal */}
+      {showFilters && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 p-6 rounded-lg w-96 max-w-md mx-4">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold">Connection Filters</h2>
+              <button
+                onClick={() => setShowFilters(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                <X className="w-6 h-6" />
+              </button>
             </div>
-          )}
-          {error && (
-            <div className="p-2 bg-red-100 text-red-800 rounded-md mb-2">
-              {error}
-            </div>
-          )}
-          <div className="max-h-60 overflow-auto">
-            {messages.map((msg, index) => (
-              <div key={index} className={`p-2 rounded-md mb-2 ${msg.fromPartner ? 'bg-blue-100' : 'bg-green-100'}`}>
-                <div className="text-sm text-gray-500">
-                  {msg.timestamp}
-                </div>
-                <div className="text-md">
-                  {msg.text}
+            
+            <div className="space-y-4">
+              {/* Gender Filter */}
+              <div>
+                <label className="block text-sm font-medium mb-2">Gender Preference</label>
+                <select
+                  value={filters.gender}
+                  onChange={(e) => setFilters(prev => ({ ...prev, gender: e.target.value }))}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                >
+                  <option value="Anyone">Anyone</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                </select>
+              </div>
+
+              {/* Country Filter */}
+              <div>
+                <label className="block text-sm font-medium mb-2">Location Preference</label>
+                <div className="space-y-2">
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={filters.sameCountryOnly}
+                      onChange={(e) => setFilters(prev => ({ ...prev, sameCountryOnly: e.target.checked }))}
+                      className="mr-2 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm">Same country only ({user?.location || 'Unknown'})</span>
+                  </label>
                 </div>
               </div>
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
-        </div>
-        <form onSubmit={handleSendMessage} className="flex">
-          <input 
-            type="text" 
-            value={newMessage} 
-            onChange={(e) => setNewMessage(e.target.value)} 
-            placeholder="Type your message..."
-            className="flex-1 p-2 border rounded-l-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button 
-            type="submit" 
-            className="p-2 bg-blue-500 text-white rounded-r-md hover:bg-blue-600 transition"
-          >
-            <Send className="w-5 h-5" />
-          </button>
-        </form>
-      </div>
-      {showFilters && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-sm w-full">
-            <h3 className="text-lg font-semibold mb-4">Apply Filters</h3>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Gender
-              </label>
-              <select 
-                value={filters.gender} 
-                onChange={(e) => setFilters({ ...filters, gender: e.target.value })} 
-                className="block w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+
+              {/* Current Filters Display */}
+              <div className="bg-gray-700 p-3 rounded-lg">
+                <h3 className="text-sm font-medium mb-2">Current Filters:</h3>
+                <ul className="text-sm text-gray-300 space-y-1">
+                  <li>• Gender: {filters.gender}</li>
+                  <li>• Location: {filters.sameCountryOnly ? `${user?.location || 'Unknown'} only` : 'Anywhere'}</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="flex space-x-3 mt-6">
+              <button
+                onClick={() => applyFilters(filters)}
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
               >
-                <option value="Anyone">Anyone</option>
-                <option value="Male">Male</option>
-                <option value="Female">Female</option>
-              </select>
-            </div>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Country
-              </label>
-              <input 
-                type="text" 
-                value={filters.country} 
-                onChange={(e) => setFilters({ ...filters, country: e.target.value })} 
-                placeholder="Enter your country"
-                className="block w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div className="mb-4 flex items-center">
-              <input 
-                type="checkbox" 
-                checked={filters.sameCountryOnly} 
-                onChange={(e) => setFilters({ ...filters, sameCountryOnly: e.target.checked })} 
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
-              <label className="ml-2 block text-sm text-gray-700">
-                Same Country Only
-              </label>
-            </div>
-            <div className="flex justify-end">
-              <button 
-                onClick={() => setShowFilters(false)} 
-                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 transition mr-2"
-              >
-                Cancel
+                Apply Filters
               </button>
-              <button 
-                onClick={() => handleApplyFilters(filters)} 
-                className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition"
+              <button
+                onClick={() => {
+                  setFilters({ gender: 'Anyone', country: 'Anyone', sameCountryOnly: false });
+                  applyFilters({ gender: 'Anyone', country: 'Anyone', sameCountryOnly: false });
+                }}
+                className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg transition-colors"
               >
-                Apply
+                Clear All
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Skip Notification */}
+      {skipNotification && (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-yellow-600 text-white px-6 py-3 rounded-lg z-40">
+          {skipNotification}
+        </div>
+      )}
+
+      {/* Header */}
+      <div className="bg-gray-800 p-4 flex justify-between items-center">
+        <div className="flex items-center">
+          <Heart className="text-red-400 w-6 h-6 mr-2" />
+          <h1 className="text-xl font-bold">Meet World Video Chat</h1>
+        </div>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => setShowFilters(true)}
+            className="flex items-center px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+          >
+            <Filter className="w-4 h-4 mr-2" />
+            Filters
+            {(filters.gender !== 'Anyone' || filters.sameCountryOnly) && (
+              <span className="ml-2 bg-red-500 text-xs px-2 py-1 rounded-full">•</span>
+            )}
+          </button>
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="flex items-center px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
+          >
+            <LogOut className="w-4 h-4 mr-2" />
+            Back to Dashboard
+          </button>
+        </div>
+      </div>
+
+      <div className="flex h-[calc(100vh-80px)]">
+        {/* Video Section */}
+        <div className="flex-1 relative">
+          {!isConnected && !isConnecting && (
+            <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
+              <div className="text-center">
+                <Heart className="w-16 h-16 text-red-400 mx-auto mb-4" />
+                <h2 className="text-2xl font-bold mb-4">Ready to meet someone new?</h2>
+                <p className="text-gray-400 mb-6">Start a video chat and connect with people around the world</p>
+                
+                {/* Local preview after enabling camera */}
+                {stream && (
+                  <div className="w-48 h-36 mx-auto mb-6 bg-gray-800 rounded-lg overflow-hidden border-2 border-gray-600 relative">
+                    <video
+                      ref={localVideoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="absolute inset-0 w-full h-full object-cover"
+                      style={{ transform: 'scaleX(-1)' }}
+                    />
+                  </div>
+                )}
+                
+                {/* Active Filters Display */}
+                {(filters.gender !== 'Anyone' || filters.sameCountryOnly) && (
+                  <div className="bg-blue-600/20 border border-blue-500/30 rounded-lg p-3 mb-4 inline-block">
+                    <p className="text-blue-300 text-sm mb-1">Active Filters:</p>
+                    <div className="text-blue-200 text-xs space-y-1">
+                      {filters.gender !== 'Anyone' && (
+                        <div>• Looking for: {filters.gender}</div>
+                      )}
+                      {filters.sameCountryOnly && (
+                        <div>• Location: {user?.location || 'Unknown'} only</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                
+                <button
+                  onClick={startVideoChat}
+                  className="px-8 py-3 bg-green-600 hover:bg-green-700 rounded-xl font-semibold text-lg transition-colors"
+                >
+                  Start Video Chat
+                </button>
+              </div>
+            </div>
+          )}
+
+          {isConnecting && (
+            <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
+              <div className="text-center">
+                {/* Camera Preview */}
+                {stream && (
+                  <div className="w-64 h-48 mx-auto mb-6 bg-gray-800 rounded-lg overflow-hidden border-2 border-gray-600 relative">
+                    <video
+                      ref={localVideoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="absolute inset-0 w-full h-full object-cover"
+                      style={{ transform: 'scaleX(-1)' }}
+                    />
+                  </div>
+                )}
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-400 mx-auto mb-4"></div>
+                <p className="text-lg mb-2">Connecting you with someone...</p>
+                {(filters.gender !== 'Anyone' || filters.sameCountryOnly) && (
+                  <div className="text-gray-400 text-sm">
+                    Looking for {filters.gender === 'Anyone' ? 'anyone' : filters.gender.toLowerCase()}
+                    {filters.sameCountryOnly && ` from ${user?.location || 'your country'}`}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {isConnected && (
+            <>
+              {/* Remote Video */}
+              <video
+                ref={remoteVideoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover"
+                style={{ transform: 'scaleX(-1)' }}
+                onError={(e) => {
+                  console.error('Remote video error:', e);
+                  setError('Remote video error. Please try refreshing.');
+                }}
+                onLoadedData={() => console.log('Remote video data loaded')}
+                onPlaying={() => console.log('Remote video playing')}
+                onStalled={() => console.log('Remote video stalled')}
+              />
+              
+              {/* Local Video (Picture in Picture) */}
+              <div className="absolute top-4 right-4 w-48 h-36 bg-gray-800 rounded-lg overflow-hidden border-2 border-gray-600">
+                <video
+                  ref={localVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover"
+                  style={{ transform: 'scaleX(-1)' }}
+                  onError={(e) => {
+                    console.error('Local video error:', e);
+                    setError('Local video error. Please try refreshing.');
+                  }}
+                  onLoadedData={() => console.log('Local video data loaded')}
+                  onPlaying={() => console.log('Local video playing')}
+                  onStalled={() => console.log('Local video stalled')}
+                />
+              </div>
+
+              {/* Partner Info */}
+              {partnerInfo && (
+                <div className="absolute top-4 left-4 bg-black/50 backdrop-blur-sm rounded-lg p-3">
+                  <p className="text-white font-semibold">{partnerInfo.username}</p>
+                  <div className="text-gray-300 text-sm mt-1 space-y-1">
+                    {partnerInfo.gender && (
+                      <div className="flex items-center">
+                        <span className="text-blue-400">•</span>
+                        <span className="ml-1">{partnerInfo.gender}</span>
+                      </div>
+                    )}
+                    {partnerInfo.location && (
+                      <div className="flex items-center">
+                        <span className="text-green-400">•</span>
+                        <span className="ml-1">{partnerInfo.location}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Chat Panel - Always visible when connected */}
+              <div className="absolute bottom-20 right-4 w-80 h-96 bg-black/70 backdrop-blur-sm rounded-lg border border-gray-600 flex flex-col">
+                {/* Chat Header */}
+                <div className="p-3 border-b border-gray-600 flex justify-between items-center">
+                  <h3 className="font-semibold text-white text-sm">Chat with {partnerInfo?.username}</h3>
+                  <MessageCircle className="w-4 h-4 text-blue-400" />
+                </div>
+
+                {/* Messages */}
+                <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                  {messages.length === 0 ? (
+                    <div className="text-center text-gray-400 text-sm mt-8">
+                      <MessageCircle className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                      <p>Start a conversation!</p>
+                    </div>
+                  ) : (
+                    messages.map((message, index) => (
+                      <div
+                        key={index}
+                        className={`flex ${message.fromPartner ? 'justify-start' : 'justify-end'}`}
+                      >
+                        <div
+                          className={`max-w-[200px] px-3 py-2 rounded-lg text-sm ${
+                            message.fromPartner
+                              ? 'bg-gray-700/80 text-white'
+                              : 'bg-blue-600/80 text-white'
+                          }`}
+                        >
+                          <p>{message.text}</p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
+
+                {/* Message Input */}
+                <div className="p-3 border-t border-gray-600">
+                  <div className="flex space-x-2">
+                    <input
+                      type="text"
+                      value={newMessage}
+                      onChange={(e) => setNewMessage(e.target.value)}
+                      onKeyPress={handleKeyPress}
+                      placeholder="Type a message..."
+                      className="flex-1 px-3 py-2 bg-gray-800/80 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 text-sm"
+                    />
+                    <button
+                      onClick={sendMessage}
+                      className="px-3 py-2 bg-blue-600/80 hover:bg-blue-700/80 rounded-lg transition-colors"
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Video Controls */}
+          {stream && (
+            <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 flex space-x-3">
+              <button
+                onClick={toggleVideo}
+                className={`p-3 rounded-full transition-colors ${
+                  isVideoEnabled ? 'bg-gray-700/80 hover:bg-gray-600/80' : 'bg-red-600/80 hover:bg-red-700/80'
+                }`}
+                title={isVideoEnabled ? 'Turn off camera' : 'Turn on camera'}
+              >
+                {isVideoEnabled ? <Video className="w-6 h-6" /> : <VideoOff className="w-6 h-6" />}
+              </button>
+              
+              <button
+                onClick={toggleAudio}
+                className={`p-3 rounded-full transition-colors ${
+                  isAudioEnabled ? 'bg-gray-700/80 hover:bg-gray-600/80' : 'bg-red-600/80 hover:bg-red-700/80'
+                }`}
+                title={isAudioEnabled ? 'Mute microphone' : 'Unmute microphone'}
+              >
+                {isAudioEnabled ? <Mic className="w-6 h-6" /> : <MicOff className="w-6 h-6" />}
+              </button>
+
+              {isConnected && (
+                <button
+                  onClick={skipCurrentUser}
+                  className="p-3 rounded-full bg-blue-600/80 hover:bg-blue-700/80 transition-colors"
+                  title="Skip to next person"
+                >
+                  <SkipForward className="w-6 h-6" />
+                </button>
+              )}
+
+              {isConnected ? (
+                <>
+                  <button
+                    onClick={findNewPartner}
+                    className="p-3 rounded-full bg-green-600/80 hover:bg-green-700/80 transition-colors"
+                    title="Find new partner"
+                  >
+                    <RotateCcw className="w-6 h-6" />
+                  </button>
+
+                  <button
+                    onClick={handleDisconnect}
+                    className="p-3 rounded-full bg-red-600/80 hover:bg-red-700/80 transition-colors"
+                    title="End call"
+                  >
+                    <Phone className="w-6 h-6 transform rotate-[135deg]" />
+                  </button>
+                </>
+              ) : null}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
